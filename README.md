@@ -8,7 +8,7 @@ Running tests with SeaLights custom integration requires several steps:
 - closing the test session
 
 Each of these steps is done by calling an appropriate SeaLights endpoint. See the
-[full API documentation](https://sealights.atlassian.net/wiki/spaces/DEV/pages/2272493579/Test+Session+API) for details. 
+[full API documentation](https://sealights.atlassian.net/wiki/spaces/SUP/pages/2690220039/Test+Sessions+API+a.k.a+TIA+API) for details. 
 
 Below is an overview of these steps, refer specific examples for solution details (list of the examples is at the bottom).
 
