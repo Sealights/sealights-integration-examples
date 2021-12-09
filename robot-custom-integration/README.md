@@ -10,9 +10,10 @@ The SeaLights integration is implemented in the file `SLListener.py`. It provide
 Listener interface to facilitate calls to SeaLights API at appropriate phases of the test suite's lifecycle:
 - `start_suite` -- here we do two things:
   - initialize the test session so that all the tests can be identified by SeaLights as being part of the same session 
-  - request the list of tests to be executed from SeaLights and narrow the test suite to only them 
-- `end_test` -- at this point we report the executed test's result, start and end time to SeaLights 
-- `end_suite` -- closing the test session
+  - request the list of tests to be executed from SeaLights and narrow the test suite to only them
+- `end_suite` -- here we do two things: 
+  - we collect and report test results including start and end time to SeaLights
+  - close the test session
 
 ## Using the SeaLights Listener 
 
