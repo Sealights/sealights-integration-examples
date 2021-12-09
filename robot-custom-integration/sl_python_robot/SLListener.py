@@ -2,9 +2,7 @@ import datetime
 import requests
 
 SEALIGHTS_LOG_TAG = '[SeaLights]'
-DUMMY_TEST_NAME = "SeaLights Dummy"
 TEST_STATUS_MAP = {"FAIL": "failed", "SKIP": "skipped"}
-
 
 class SLListener:
     ROBOT_LISTENER_API_VERSION = 3
@@ -16,6 +14,8 @@ class SLListener:
     labid = ''
     stage_name = ''
 
+    #--- Robot Listener interface methods ---
+    
     def __init__(self, base_url, sltoken, bsid, stagename, labid=""):
         self.base_url = 'https://' + base_url + '/sl-api/v1'
         self.token = sltoken
@@ -28,10 +28,13 @@ class SLListener:
             self.labid = bsid
 
     def start_suite(self, suite, result):
+        """initialize the test session so that all the tests can be identified by SeaLights as being part of the same session"""
         self.create_test_session()
+        """request the list of tests to be executed from SeaLights"""
         self.excluded_tests = set(self.get_excluded_tests())
         print(f'>>>> Skipped tests: {list(self.excluded_tests)}')
 
+        """Narrow the test suite to only the recommended tests by Sealights"""
         all_tests = set()
         for test in suite.tests:
             all_tests.add(test.name)
@@ -44,13 +47,17 @@ class SLListener:
     def end_suite(self, date, result):
         if not self.test_session_id:
             return
+        """Collect and report test results to SeaLights including start and end time"""
         test_results = self.build_test_results(result)
         if test_results:
             requests.post(self.get_session_url(), json=test_results, headers=self.get_header())
             print(f'>>>> {SEALIGHTS_LOG_TAG} Results: {test_results}')
+        """Close the test session"""
         print(f'>>>> {SEALIGHTS_LOG_TAG} Deleting test session {self.test_session_id}')
         requests.delete(self.get_session_url(), headers=self.get_header())
 
+    #--- Sealights API helpers ---
+    
     def create_test_session(self):
         initialize_session_request = {'labId': self.labid, 'testStage': self.stage_name, 'bsid': self.bsid}
         response = requests.post(f'{self.base_url}/test-sessions', json=initialize_session_request, headers=self.get_header())
@@ -70,13 +77,7 @@ class SLListener:
         if recommendations.status_code == 200:
             return recommendations.json()["data"]
         return []
-
-    def get_header(self):
-        return {'Authorization': 'Bearer ' + self.token, 'Content-Type': 'application/json'}
-
-    def get_session_url(self):
-        return f'{self.base_url}/test-sessions/{self.test_session_id}'
-
+    
     def build_test_results(self, result):
         tests = []
         for test in result.tests:
@@ -85,6 +86,14 @@ class SLListener:
             end_ms = self.get_epoch_timestamp(result.endtime)
             tests.append({"name": test.name, "status": test_status, "start": start_ms, "end": end_ms})
         return tests
+    
+    #--- Generic helpers ---
+   
+    def get_header(self):
+        return {'Authorization': 'Bearer ' + self.token, 'Content-Type': 'application/json'}
+
+    def get_session_url(self):
+        return f'{self.base_url}/test-sessions/{self.test_session_id}'
 
     def get_epoch_timestamp(self, value):
         dt_value = datetime.datetime.strptime(value, "%Y%m%d %H:%M:%S.%f")
