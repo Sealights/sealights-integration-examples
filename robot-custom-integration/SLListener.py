@@ -35,7 +35,7 @@ class SLListener:
         self.create_test_session()
         """request the list of tests to be executed from SeaLights"""
         self.excluded_tests = set(self.get_excluded_tests())
-        print(f'{SEALIGHTS_LOG_TAG} {len(self.excluded_tests)} Skipped tests: {list(self.excluded_tests)}')
+        print(f'{SEALIGHTS_LOG_TAG} {len(self.excluded_tests)} skipped tests: {list(self.excluded_tests)}')
 
         """Narrow the test suite to only the recommended tests by Sealights"""
         all_tests = set()
@@ -45,7 +45,7 @@ class SLListener:
                 test.body.create_keyword(name="SKIP")
 
         tests_for_execution = list(all_tests - self.excluded_tests)
-        print(f'{SEALIGHTS_LOG_TAG} {len(tests_for_execution)} Tests for execution: {tests_for_execution}')
+        print(f'{SEALIGHTS_LOG_TAG} {len(tests_for_execution)} tests for execution: {tests_for_execution}')
 
     def end_suite(self, date, result):
         if not self.test_session_id:
