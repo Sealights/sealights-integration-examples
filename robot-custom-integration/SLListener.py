@@ -31,7 +31,7 @@ class SLListener:
         if not suite.tests:
             return
         print(f'{SEALIGHTS_LOG_TAG} {len(suite.tests)} tests in suite {suite.longname}')
-        """initialize the test session so that all the tests can be identified by SeaLights as being part of the same session"""
+        """Initialize the test session so that all the tests can be identified by SeaLights as being part of the same session"""
         self.create_test_session()
         """request the list of tests to be executed from SeaLights"""
         self.excluded_tests = set(self.get_excluded_tests())
@@ -45,7 +45,7 @@ class SLListener:
                 test.body.create_keyword(name="SKIP")
 
         tests_for_execution = list(all_tests - self.excluded_tests)
-        print(f'{SEALIGHTS_LOG_TAG} {len(tests_for_execution)} tests for execution: {tests_for_execution}')
+        #print(f'{SEALIGHTS_LOG_TAG} {len(tests_for_execution)} tests for execution: {tests_for_execution}')
 
     def end_suite(self, date, result):
         if not self.test_session_id:
@@ -53,7 +53,7 @@ class SLListener:
         """Collect and report test results to SeaLights including start and end time"""
         test_results = self.build_test_results(result)
         if test_results:
-            print(f'{SEALIGHTS_LOG_TAG} {len(test_results)} Results to send: {test_results}')
+            print(f'{SEALIGHTS_LOG_TAG} {len(test_results)} results to send: {test_results}')
             response = requests.post(self.get_session_url(), json=test_results, headers=self.get_header())
             if not response.ok:
                 print(f'{SEALIGHTS_LOG_TAG} Failed to upload results (Error {response.status_code})')
@@ -79,7 +79,7 @@ class SLListener:
 
     def get_excluded_tests(self):
         recommendations = requests.get(f'{self.get_session_url()}/exclude-tests', headers=self.get_header())
-        print(f'{SEALIGHTS_LOG_TAG} Retrieving Recommendations: {"OK" if recommendations.ok else "Error {recommendations.status_code}"}')
+        print(f'{SEALIGHTS_LOG_TAG} Retrieving recommendations: {"OK" if recommendations.ok else "Error {recommendations.status_code}"}')
         if recommendations.status_code == 200:
             return recommendations.json()["data"]
         return []
