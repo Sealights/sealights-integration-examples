@@ -30,13 +30,12 @@ class SLListener:
     def start_suite(self, suite, result):
         if not suite.tests:
             return
-        print(f'{SEALIGHTS_LOG_TAG} {len(suite.tests)} tests in suite {suite.longname}')
         """Initialize the test session so that all the tests can be identified by SeaLights as being part of the same session"""
         self.create_test_session()
-        """request the list of tests to be executed from SeaLights"""
+        print(f'{SEALIGHTS_LOG_TAG} {len(suite.tests)} tests in suite \"{suite.longname}\"')
+        """Request the list of tests to be executed from SeaLights"""
         self.excluded_tests = set(self.get_excluded_tests())
-        print(f'{SEALIGHTS_LOG_TAG} {len(self.excluded_tests)} skipped tests: {list(self.excluded_tests)}')
-
+        print(f'{len(self.excluded_tests)} tests recommended to be skipped.')
         """Narrow the test suite to only the recommended tests by Sealights"""
         all_tests = set()
         for test in suite.tests:
@@ -45,7 +44,7 @@ class SLListener:
                 test.body.create_keyword(name="SKIP")
 
         tests_for_execution = list(all_tests - self.excluded_tests)
-        #print(f'{SEALIGHTS_LOG_TAG} {len(tests_for_execution)} tests for execution: {tests_for_execution}')
+        #print(f'{SEALIGHTS_LOG_TAG} {len(tests_for_execution)} tests kept for execution.')
 
     def end_suite(self, date, result):
         if not self.test_session_id:
@@ -79,7 +78,7 @@ class SLListener:
 
     def get_excluded_tests(self):
         recommendations = requests.get(f'{self.get_session_url()}/exclude-tests', headers=self.get_header())
-        print(f'{SEALIGHTS_LOG_TAG} Retrieving recommendations: {"OK" if recommendations.ok else "Error {recommendations.status_code}"}')
+        print(f'{SEALIGHTS_LOG_TAG} Retrieving recommendations: {"OK" if recommendations.ok else "Error {recommendations.status_code}"}. ', end="")
         if recommendations.status_code == 200:
             return recommendations.json()["data"]
         return []
