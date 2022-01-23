@@ -22,6 +22,7 @@ class SLListener:
         self.bsid = bsid
         self.stage_name = stagename
         self.excluded_tests = []
+        self.test_session_id = None
         if labid:
             self.labid = labid
         else:
@@ -31,8 +32,9 @@ class SLListener:
         if not suite.tests:
             return
         print(f'{SEALIGHTS_LOG_TAG} {len(suite.tests)} tests in suite {suite.longname}')
-        """initialize the test session so that all the tests can be identified by SeaLights as being part of the same session"""
-        self.create_test_session()
+        if not self.test_session_id:
+            """initialize the test session so that all the tests can be identified by SeaLights as being part of the same session"""
+            self.create_test_session()
         """request the list of tests to be executed from SeaLights"""
         self.excluded_tests = set(self.get_excluded_tests())
         print(f'{SEALIGHTS_LOG_TAG} {len(self.excluded_tests)} Skipped tests: {list(self.excluded_tests)}')
