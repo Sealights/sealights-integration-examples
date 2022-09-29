@@ -1,0 +1,107 @@
+{
+	"info": {
+		"_postman_id": "faa2f71d-d03f-466d-82bf-2f8b6fb3c078",
+		"name": "PostmanSampleIntegration",
+		"description": "Dummy collection of tests for Sealights integration with Postman ",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Check my IP",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status test\", function () {\r",
+							"    pm.response.to.have.status(200);\r",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://checkip.amazonaws.com",
+					"protocol": "https",
+					"host": [
+						"checkip",
+						"amazonaws",
+						"com"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Sealights Java version",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"tests[\"Status code is 200\"] = responseCode.code === 200;\r",
+							"tests[\"Response time is acceptable\"] = _.inRange(responseTime, 0, 500);\r",
+							"tests[\"Body is not empty\"] = (responseBody!==null || responseBody.length!==0);"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://agents.sealights.co/sealights-java/sealights-java-version.txt",
+					"protocol": "https",
+					"host": [
+						"agents",
+						"sealights",
+						"co"
+					],
+					"path": [
+						"sealights-java",
+						"sealights-java-version.txt"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Check Github API",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = JSON.parse(responseBody);\r",
+							"var usersURL = \"https://api.github.com/user\"\r",
+							"tests[\"Gets the correct users url\"] = jsonData.current_user_url === usersURL;"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://api.github.com/",
+					"protocol": "https",
+					"host": [
+						"api",
+						"github",
+						"com"
+					],
+					"path": [
+						""
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
