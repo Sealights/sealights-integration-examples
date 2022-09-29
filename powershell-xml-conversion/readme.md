@@ -9,7 +9,7 @@ For example, you can change the parameter timestampFormat in your XML Reporter s
 ---
 
 ## nUnit XML conversion to Sealights JSON format for TIA API
-```
+```powershell
 $SealightsJson = ConvertTo-Json -InputObject @( [xml]$(Get-Content -Path $XmlTestsResultsFile) | Select-Xml -XPath "//test-case" | foreach {
      [PSCustomObject]@{
          name  = $_.node.fullname
@@ -21,7 +21,7 @@ $SealightsJson = ConvertTo-Json -InputObject @( [xml]$(Get-Content -Path $XmlTes
  ```
  
 ## TestNG XML conversion to Sealights JSON format for TIA API
-```
+```powershell
 $SealightsJson = ConvertTo-Json -InputObject @( [xml]$(Get-Content -Path $XmlTestsResultsFile) | Select-Xml -XPath "//test-method" |foreach {
     [PSCustomObject]@{
         name = $_.node.signature
