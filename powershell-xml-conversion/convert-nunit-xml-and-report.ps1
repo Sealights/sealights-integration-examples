@@ -17,6 +17,8 @@ $SL_TESTSTAGE_NAME="Automation Tests"
 $SL_BSID=$(Get-Content (Resolve-Path "buildSessionId.txt") -Raw | Out-String).Trim()
 $SL_LABID= ""
 
+$XmlTestsResultsFile = ".\acceptance-test-results.xml"
+
 # ================= FUNCTIONS DEFINITIONS ================= 
 function Log-ScriptStep($StepName) { Write-Host "`n*******************************`n*** $StepName ***`n*******************************`n" }
 
@@ -71,11 +73,9 @@ Log-ScriptStep("Executing Tests")
 Log-ScriptStep("Uploading Tests Results")
 
 #START LOOP over NUnit.xml files if there are multiple
-$XmlTestsResultsFile = ".\acceptance-test-results.xml"
 
 #(Sample) Converting Tests Results from XML file (NUnit format)
 # Reference Doc page: https://sealights.atlassian.net/wiki/spaces/SUP/pages/1725267986#Converting-Results-Report-from-XML
-
 $SealightsJson = ConvertTo-Json -InputObject @( [xml]$(Get-Content -Path $XmlTestsResultsFile) | Select-Xml -XPath "//test-case" | foreach {
      [PSCustomObject]@{
          name  = $_.node.fullname
