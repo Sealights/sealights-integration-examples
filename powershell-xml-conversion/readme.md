@@ -1,4 +1,4 @@
-# Sample powershell commands converting XML to JSON 
+# Sample powershell commands converting various XML reports to JSON format for Sealights' TIA API
 
 ---
 **NOTE**
@@ -8,7 +8,7 @@ For example, you can change the parameter timestampFormat in your XML Reporter s
 
 ---
 
-## nUnit XML conversion to Sealights JSON format for TIA API
+## nUnit XML 
 ```powershell
 $SealightsJson = ConvertTo-Json -InputObject @( [xml]$(Get-Content -Path $XmlTestsResultsFile) | Select-Xml -XPath "//test-case" | foreach {
      [PSCustomObject]@{
@@ -20,7 +20,7 @@ $SealightsJson = ConvertTo-Json -InputObject @( [xml]$(Get-Content -Path $XmlTes
  } )
  ```
  
-## TestNG XML conversion to Sealights JSON format for TIA API
+## TestNG XML 
 ```powershell
 $SealightsJson = ConvertTo-Json -InputObject @( [xml]$(Get-Content -Path $XmlTestsResultsFile) | Select-Xml -XPath "//test-method" |foreach {
     [PSCustomObject]@{
@@ -30,4 +30,17 @@ $SealightsJson = ConvertTo-Json -InputObject @( [xml]$(Get-Content -Path $XmlTes
 		status = $(if ($_.node.status -eq 'PASS') { 'passed' } else { $(if ($_.node.status -eq 'FAIL') { 'failed' } else { 'skipped' }) })
     }
 } ) )
+ ```
+
+## JUnit XML 
+In below command, we map both JUnit's "failures" and "errors" to Sealights "failed" status and calculate the end time using the start timestamp and the test duration reported.
+```powershell
+ConvertTo-Json -InputObject @( [xml]$(Get-Content -Path $XmlTestsResultsFile) | Select-Xml -XPath "//testcase" | foreach {
+           [PSCustomObject]@{
+                name  = $_.node.name
+                start = ([DateTimeOffset](Get-Date $($_.node.'timestamp'))).ToUnixTimeMilliseconds()
+                end   = (([DateTimeOffset](Get-Date $($_.node.'timestamp'))).AddSeconds([double] $_.node.'time')).ToUnixTimeMilliseconds()
+                status = $(if ('failure error'.contains($_.node.FirstChild.name)) { 'failed' } else { $(if ($_.node.FirstChild.name -eq 'skipped') { 'skipped' } else { 'passed' }) })
+           }
+     } )
  ```
