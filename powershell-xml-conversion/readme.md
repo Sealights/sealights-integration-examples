@@ -40,7 +40,7 @@ ConvertTo-Json -InputObject @( [xml]$(Get-Content -Path $XmlTestsResultsFile) | 
                 name  = $_.node.name
                 start = ([DateTimeOffset](Get-Date $($_.node.'timestamp'))).ToUnixTimeMilliseconds()
                 end   = (([DateTimeOffset](Get-Date $($_.node.'timestamp'))).AddSeconds([double] $_.node.'time')).ToUnixTimeMilliseconds()
-                status = $(if ('failure error'.contains($_.node.FirstChild.name)) { 'failed' } else { $(if ($_.node.FirstChild.name -eq 'skipped') { 'skipped' } else { 'passed' }) })
+                status = $( if ($_.node.FirstChild.name -eq $null) { 'success' } else {  $(if ($_.node.FirstChild.name -eq 'skipped') { 'skipped' } else { 'failure' })  })
            }
      } )
  ```
