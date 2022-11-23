@@ -43,7 +43,7 @@ posting an array of result elements.
 
 The endpoints URL is:
 ```
-/sl-api/v1/test-sessions/{test-session-id}
+/sl-api/v2/test-sessions/{test-session-id}
 ```
 
 The payload is an array of results:
