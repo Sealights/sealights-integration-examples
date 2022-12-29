@@ -14,25 +14,36 @@ Listener interface to facilitate calls to SeaLights API at appropriate phases of
 - `end_suite` -- here we do two things: 
   - we collect and report test results including start and end time to SeaLights
   - close the test session
+- `start_test` - here we start an OpenTelemetry span with the test name and session id as [baggage](https://opentelemetry.io/docs/reference/specification/baggage/api/).
+   
+   This will increase accuracy for the coverage to test correlation and will lead to more test savings.
+- `end_test` - here we end the span that was opened in the beginning of the test. 
 
 ## Using the SeaLights Listener 
+* Install the dependencies located in setup.py
 
-The listener is taken into use from the command line with the `--listener` option so that the name of the listener is given to it as an argument. Additional command arguments are specified after the listener name (or path) using a colon (`:`) as a separator like `--listener “SLListener.py:<CustomerDomain>:<Token>:<buildSessionId>:<Test Stage Name>:<LabId>"`
-* Customer Domain URL
-* Token
-* buildSessionId
-* Test Stage name
-* (Optional) LabId
+
+* Install active opentelemetry instrumentation libraries
+  `opentelemetry-bootstrap --action=install`
+
+  This commands inspects the active Python site-packages and figures out which instrumentation packages the user might want to install. By default it prints out a list of the suggested instrumentation packages which can be added to a requirements.txt file. It also supports installing the suggested packages when run with --action=install flag.
+
+
+* The listener is taken into use from the command line with the `--listener` option so that the name of the listener is given to it as an argument. Additional command arguments are specified after the listener name (or path) using a colon (`:`) as a separator like `--listener “SLListener.py:<Token>:<buildSessionId>:<Test Stage Name>:<LabId>"`
+  * Token
+  * buildSessionId
+  * Test Stage name
+  * (Optional) LabId
 
 ## Running the example with SeaLights
 
 To apply the listener to tests use the following command:
 ```
-robot --listener "SLListener.py:your-domain.sealights.co:${SL_TOKEN}:${SL_BUILD_SESSION_ID}:Robot Tests:${SL_LAB_ID}" some_tests.robot
+robot --listener "SLListener.py:${SL_TOKEN}:${SL_BUILD_SESSION_ID}:Robot Tests:${SL_LAB_ID}" some_tests.robot
 ```
 or 
 ```
-robot --listener "SLListener.py:your-domain.sealights.co:`cat sltoken.txt`:`cat buildSessionId.txt`:Robot Tests" some_tests.robot
+robot --listener "SLListener.py:`cat sltoken.txt`:`cat buildSessionId.txt`:Robot Tests" some_tests.robot
 ```
 
 The `SLListener`'s constructor requires the SeaLights token and build session id, in the above command it is assumed
