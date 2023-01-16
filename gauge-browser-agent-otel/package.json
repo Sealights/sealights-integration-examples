@@ -1,0 +1,11 @@
+{
+  "name": "gauge-taiko-template",
+  "description": "Starter template for writing JavaScript tests for Gauge",
+  "scripts": {
+    "start": "cd calculator-app && httpster",
+    "test": "gauge run specs/"
+  },
+  "dependencies": {
+    "taiko": "latest"
+  }
+}
