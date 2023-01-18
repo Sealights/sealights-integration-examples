@@ -15,21 +15,47 @@ const {
 } = require("taiko");
 const assert = require("assert");
 const headless = process.env.headless_chrome.toLowerCase() === "true";
+const config = require("../config");
+const jwtDecode = require("jwt-decode");
+const axios = require("axios");
+
+const decoded = jwtDecode(config.apiToken); // Agent Token
+const baseUrl = decoded["x-sl-server"]; // Base url of the backend
+
+const createTestSession = () => {
+  return axios.post(
+    baseUrl.replace("/api", "/sl-api/v1/test-sessions"), // Public API to start a test session
+    {
+      testStage: "Gauge Tests",
+      bsid: "51721270-ead5-498b-b22f-c3f9861ea44e", // Better set from environment variable
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${config.apiToken}`,
+      },
+    }
+  );
+};
 
 // Works the same with any test framework, before test starts emit event to set baggage
 beforeScenario(async (scenario) => {
-  const slbaggage = await evaluate(
+  // Start a test session
+  const { testSessionId } = (await createTestSession()).data.data;
+
+  await evaluate(
     "",
-    (element, args) => {
-      window.emitter.emit("set:baggage", {
-        "x-sl-test-name": args.currentScenario.name,
-        "x-sl-test-session-id": "sessionId",
+    async (element, args) => {
+      const testName = args.scenario.currentScenario.name;
+      const customEvent = new CustomEvent("set:baggage", {
+        detail: {
+          "x-sl-test-name": testName,
+          "x-sl-test-session-id": args.testSessionId,
+        },
       });
-      return window.getSlBaggage();
+      window.dispatchEvent(customEvent);
     },
-    { args: scenario }
+    { args: { scenario, testSessionId } }
   );
-  console.log("baggage", slbaggage);
 });
 
 beforeSuite(async () => {
@@ -42,6 +68,11 @@ beforeSuite(async () => {
 });
 
 afterSuite(async () => {
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  await sleep(10 * 1000);
   await closeBrowser();
 });
 

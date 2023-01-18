@@ -6,6 +6,8 @@
     "test": "gauge run specs/"
   },
   "dependencies": {
+    "axios": "^1.2.3",
+    "jwt-decode": "^3.1.2",
     "taiko": "latest"
   }
 }
