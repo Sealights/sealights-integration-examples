@@ -14,6 +14,7 @@ window.dispatchEvent(customEvent);
 The test session is started using the [Public Create Test Session API](https://sealights.atlassian.net/wiki/spaces/SUP/pages/2690220039/Test+Sessions+API+a.k.a+TIA+API#Creating-Test-Session), this is done before sending the event and the return value of this call is a `testSessionId` which is than sent as baggage.
 
 ## Run
+#### Replace the `apiToken` value with your API Token inside `./config/index.js`.
 In order to run the project a backend is required that implements 2 APIs and running on port `8080`
 ```
 /add?n1=&n2=
@@ -28,7 +29,7 @@ frontend application (already built) can be found inside the `frontend` folder.
 To run this demo from scratch:
 ```bash
 npm i -g httpster
-cd backend && npm run start
+cd backend && npm i && npm run start
 cd calculator-app && httpster
-npm run test
+npm i && npm run test
 ```

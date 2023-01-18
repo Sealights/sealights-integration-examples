@@ -27,7 +27,7 @@ const createTestSession = () => {
     baseUrl.replace("/api", "/sl-api/v1/test-sessions"), // Public API to start a test session
     {
       testStage: "Gauge Tests",
-      bsid: "51721270-ead5-498b-b22f-c3f9861ea44e", // Better set from environment variable
+      bsid: "51721270-ead5-498b-b22f-c3f9861ea44e", // Better set from environment variable or get from window.$Sealights
     },
     {
       headers: {
