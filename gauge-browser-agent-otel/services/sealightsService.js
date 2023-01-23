@@ -3,7 +3,10 @@ const jwtDecode = require("jwt-decode");
 const fs = require("fs");
 
 const apiToken = fs.readFileSync(`${__dirname}/../sltoken.txt`, "utf-8");
-const bsid = fs.readFileSync(`${__dirname}/../buildSessionId`, "utf-8");
+const buildSessionId = fs.readFileSync(
+  `${__dirname}/../buildSessionId`,
+  "utf-8"
+);
 
 const decoded = jwtDecode(apiToken); // Agent Token
 const baseUrl = decoded["x-sl-server"]; // Base url of the backend
@@ -23,11 +26,12 @@ const testSessionsV2Instance = axios.create({
 });
 
 module.exports = {
-  createTestSession: () => {
-    return testSessionsV1Instance.post("/", {
+  createTestSession: async () => {
+    const { data } = await testSessionsV1Instance.post("/", {
       testStage: "Gauge Tests",
-      bsid,
+      bsid: buildSessionId,
     });
+    return data;
   },
   endTestSession: (testSessionId) => {
     return testSessionsV1Instance.delete(`/${testSessionId}`);

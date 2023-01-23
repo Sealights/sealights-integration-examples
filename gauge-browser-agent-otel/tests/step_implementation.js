@@ -22,7 +22,7 @@ let testStartTime;
 
 beforeSuite(async () => {
   // Start a test session
-  const { testSessionId } = (await SLService.createTestSession()).data.data;
+  const { testSessionId } = (await SLService.createTestSession()).data;
   testSession = testSessionId;
 
   await openBrowser({
