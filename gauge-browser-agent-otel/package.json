@@ -1,6 +1,6 @@
 {
-  "name": "gauge-taiko-template",
-  "description": "Starter template for writing JavaScript tests for Gauge",
+  "name": "sl-browser-agent-gauge-integration",
+  "description": "Sample project demonstrating usage of Sealights Browser Agent with OTEL flavor and Gauge with taiko tests",
   "scripts": {
     "start": "cd calculator-app && httpster",
     "test": "gauge run specs/"
