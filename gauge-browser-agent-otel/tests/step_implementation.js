@@ -64,7 +64,7 @@ afterScenario(async (scenario) => {
     scenario.currentScenario.name,
     testStartTime,
     Date.now(),
-    scenario.isFailed ? "failed" : "passed" // could also be "skipped" value, implement logic as needed
+    scenario.currentScenario.isFailed ? "failed" : "passed"
   );
   testStartTime = undefined;
 });

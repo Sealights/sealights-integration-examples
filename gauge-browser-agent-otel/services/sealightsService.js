@@ -8,14 +8,14 @@ const bsid = fs.readFileSync(`${__dirname}/../buildSessionId`, "utf-8");
 const decoded = jwtDecode(apiToken); // Agent Token
 const baseUrl = decoded["x-sl-server"]; // Base url of the backend
 
-const http = axios.create({
+const testSessionsV1Instance = axios.create({
   baseURL: baseUrl.replace("/api", "/sl-api/v1/test-sessions"),
   headers: {
     Authorization: `Bearer ${apiToken}`,
   },
 });
 
-const httpv2 = axios.create({
+const testSessionsV2Instance = axios.create({
   baseURL: baseUrl.replace("/api", "/sl-api/v2/test-sessions"),
   headers: {
     Authorization: `Bearer ${apiToken}`,
@@ -24,16 +24,16 @@ const httpv2 = axios.create({
 
 module.exports = {
   createTestSession: () => {
-    return http.post("/", {
+    return testSessionsV1Instance.post("/", {
       testStage: "Gauge Tests",
       bsid,
     });
   },
   endTestSession: (testSessionId) => {
-    return http.delete(`/${testSessionId}`);
+    return testSessionsV1Instance.delete(`/${testSessionId}`);
   },
   sendTestEvent: (testSessionId, name, start, end, status) => {
-    return httpv2.post(`/${testSessionId}`, [
+    return testSessionsV2Instance.post(`/${testSessionId}`, [
       {
         name,
         start,
