@@ -68,7 +68,17 @@ afterScenario(async () => {
 ## 4. Sending test events
 We can send test events to Sealights in the `beforeScenario` and/or `afterScenario` hook, again using Sealights Public API like so:
 ```ecmascript 6
-
+afterScenario(async (scenario) => {
+     // Send test event to Sealights
+    await SLService.sendTestEvent(
+        testSession,
+        scenario.currentScenario.name,
+        testStartTime,
+        Date.now(),
+        scenario.isFailed ? "failed" : "passed" // could also be "skipped" value, implement logic as needed
+    );
+    ...
+});
 ```
 
 ## 5. End the test session

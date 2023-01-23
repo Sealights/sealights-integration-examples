@@ -59,7 +59,7 @@ afterScenario(async (scenario) => {
     window.dispatchEvent(customEvent);
   });
   // Send test event to Sealights
-  const data = await SLService.sendTestEvent(
+  await SLService.sendTestEvent(
     testSession,
     scenario.currentScenario.name,
     testStartTime,
