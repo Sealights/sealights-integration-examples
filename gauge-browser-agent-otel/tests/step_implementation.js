@@ -15,50 +15,16 @@ const {
 } = require("taiko");
 const assert = require("assert");
 const headless = process.env.headless_chrome.toLowerCase() === "true";
-const config = require("../config");
-const jwtDecode = require("jwt-decode");
-const axios = require("axios");
+const SLService = require("../services/sealightsService");
 
-const decoded = jwtDecode(config.apiToken); // Agent Token
-const baseUrl = decoded["x-sl-server"]; // Base url of the backend
-
-const createTestSession = () => {
-  return axios.post(
-    baseUrl.replace("/api", "/sl-api/v1/test-sessions"), // Public API to start a test session
-    {
-      testStage: "Gauge Tests",
-      bsid: "51721270-ead5-498b-b22f-c3f9861ea44e", // Better set from environment variable or get from window.$Sealights
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${config.apiToken}`,
-      },
-    }
-  );
-};
-
-// Works the same with any test framework, before test starts emit event to set baggage
-beforeScenario(async (scenario) => {
-  // Start a test session
-  const { testSessionId } = (await createTestSession()).data.data;
-
-  await evaluate(
-    "",
-    async (element, args) => {
-      const testName = args.scenario.currentScenario.name;
-      const customEvent = new CustomEvent("set:baggage", {
-        detail: {
-          "x-sl-test-name": testName,
-          "x-sl-test-session-id": args.testSessionId,
-        },
-      });
-      window.dispatchEvent(customEvent);
-    },
-    { args: { scenario, testSessionId } }
-  );
-});
+let testSession;
+let testStartTime;
 
 beforeSuite(async () => {
+  // Start a test session
+  const { testSessionId } = (await SLService.createTestSession()).data.data;
+  testSession = testSessionId;
+
   await openBrowser({
     headless,
     ignoreCertificateErrors: true,
@@ -67,12 +33,50 @@ beforeSuite(async () => {
   await goto("http://localhost:3333");
 });
 
+beforeScenario(async (scenario) => {
+  // Set the correct baggage before a scenario runs with testName and the current testSessionId
+  await evaluate(
+    "",
+    async (element, args) => {
+      const testName = args.scenario.currentScenario.name;
+      const customEvent = new CustomEvent("set:baggage", {
+        detail: {
+          "x-sl-test-name": testName,
+          "x-sl-test-session-id": args.testSession,
+        },
+      });
+      window.dispatchEvent(customEvent);
+    },
+    { args: { scenario, testSession } }
+  );
+  testStartTime = Date.now();
+});
+
+afterScenario(async (scenario) => {
+  // Unset baggage after scenario
+  await evaluate("", async () => {
+    const customEvent = new CustomEvent("delete:baggage");
+    window.dispatchEvent(customEvent);
+  });
+  // Send test event to Sealights
+  const data = await SLService.sendTestEvent(
+    testSession,
+    scenario.currentScenario.name,
+    testStartTime,
+    Date.now(),
+    scenario.isFailed ? "failed" : "passed" // could also be "skipped" value, implement logic as needed
+  );
+  testStartTime = undefined;
+});
+
 afterSuite(async () => {
+  // End the current test session after the running suite
+  await SLService.endTestSession(testSession);
   function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  await sleep(10 * 1000);
+  await sleep(5 * 1000);
   await closeBrowser();
 });
 
