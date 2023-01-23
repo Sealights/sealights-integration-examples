@@ -75,7 +75,7 @@ afterScenario(async (scenario) => {
         scenario.currentScenario.name,
         testStartTime,
         Date.now(),
-        scenario.isFailed ? "failed" : "passed" 
+        scenario.currentScenario.isFailed ? "failed" : "passed"
     );
     ...
 });
