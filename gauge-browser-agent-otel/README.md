@@ -104,8 +104,7 @@ frontend application (already built) can be found inside the `calculator-app` fo
 
 To run this demo from scratch:
 ```bash
-npm i -g httpster
 cd backend && npm i && npm run start
-cd sl_web && httpster
+cd sl_web && npx httpster
 npm i && npm run test
 ```
