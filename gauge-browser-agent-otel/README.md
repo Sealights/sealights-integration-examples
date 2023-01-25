@@ -14,8 +14,10 @@ npx slnodejs config --tokenfile sltoken.txt --appName "Browser Example" --branch
 ```
 If this command ran successfully you should have `buildSessionId` file in the same folder and can continue to scan the build:
 ```bash
-npx slnodejs scan --workspacepath ./calculator-app --tokenfile sltoken.txt --buildsessionidfile buildSessionId --scm none --instrumentForBrowsers --outputpath "sl_web"
+npx slnodejs scan --workspacepath ./calculator-app --tokenfile sltoken.txt --buildsessionidfile buildSessionId --scm none --instrumentForBrowsers --enableOpenTelemetry --outputpath "sl_web"
 ```
+**IMPORTANT**: Make sure you are running `slnodejs >= 6.1.278` with `npx`, to clear cache use `npx clear-npx-cache`.
+
 After a successful build can you should have a resulting `sl_web` folder under this one and can continue with the steps bellow.
 
 **IMPORTANT:** Do not delete `sltoken.txt` of `buildSessionId` files after the build scan, they are used in the following steps.
