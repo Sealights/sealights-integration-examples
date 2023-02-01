@@ -1,14 +1,21 @@
+import functools
 import os
+import time
+
 os.environ["OTEL_METRICS_EXPORTER"] = "none"
 os.environ["OTEL_TRACES_EXPORTER"] = "none"
 # DO NOT REMOVE THIS IMPORT
 # It allows auto instrumentation for robot and pabot use cases
 import opentelemetry.instrumentation.auto_instrumentation.sitecustomize
 import datetime
-
 import requests
 import jwt
 from opentelemetry import trace, context, baggage
+
+try:
+    from selenium.webdriver.remote.webdriver import WebDriver
+except ImportError:
+    WebDriver = None
 
 SL_TEST_LISTENER_TRACER = "sl-test-listener"
 tracer = trace.get_tracer(SL_TEST_LISTENER_TRACER)
@@ -50,6 +57,7 @@ class SLListener:
 
     def start_test(self, data, result):
         test_name = data.name
+        self.try_instrument_selenium(test_name, self.test_session_id)
         self.start_span(test_name)
 
     def end_test(self, data, result):
@@ -129,10 +137,16 @@ class SLListener:
         span = tracer.start_span(test_name)
         ctx = trace.set_span_in_context(span, context.get_current())
         ctx = baggage.set_baggage("x-sl-test-name", test_name, ctx)
-        ctx = baggage.set_baggage("x-sl-execution-id", self.test_session_id, ctx)
+        ctx = baggage.set_baggage("x-sl-test-session-id", self.test_session_id, ctx)
         token = context.attach(ctx)
         self.spans[test_name] = {"span": span, "token": token}
         return span
+
+    def try_instrument_selenium(self, test_name, test_session_id):
+        if WebDriver:
+            WebDriver.get = selenium_get_url(test_name, test_session_id)(WebDriver.get)
+            WebDriver.close = selenium_close_quit(WebDriver.close)
+            WebDriver.quit = selenium_close_quit(WebDriver.quit)
 
     # --- Generic helpers ---
 
@@ -150,3 +164,32 @@ class SLListener:
         payload = jwt.decode(self.token, algorithms=["RS512"], options={"verify_signature": False})
         api_base_url = payload.get("x-sl-server")
         return f'{api_base_url.replace("api", "sl-api")}/v1'
+
+
+def selenium_get_url(test_name, test_session_id):
+    def inner(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            response = f(*args, **kwargs)
+            try:
+                self = args[0]
+                script = 'const testStartEvent = new CustomEvent("set:baggage", {detail: { "x-sl-test-name": "%s", "x-sl-test-session-id": "%s" }});window.dispatchEvent(testStartEvent);' % (test_name, test_session_id)
+                self.execute_script(script)
+                return response
+            except:
+                return response
+        return wrapper
+    return inner
+
+
+def selenium_close_quit(f):
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        try:
+            self = args[0]
+            script = 'await window.$SealightsAgent.sendAllFootprints();'
+            self.execute_script(script)
+            return f(*args, **kwargs)
+        except:
+            return f(*args, **kwargs)
+    return wrapper
