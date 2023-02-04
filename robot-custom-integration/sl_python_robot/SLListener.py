@@ -1,12 +1,12 @@
 import functools
 import os
-import time
 
 os.environ["OTEL_METRICS_EXPORTER"] = "none"
 os.environ["OTEL_TRACES_EXPORTER"] = "none"
 # DO NOT REMOVE THIS IMPORT
 # It allows auto instrumentation for robot and pabot use cases
 import opentelemetry.instrumentation.auto_instrumentation.sitecustomize
+from urllib.parse import quote as quote
 import datetime
 import requests
 import jwt
@@ -56,12 +56,12 @@ class SLListener:
         self.end_test_session()
 
     def start_test(self, data, result):
-        test_name = data.name
+        test_name = self.get_encoded_test_name(data.name)
         self.try_instrument_selenium(test_name, self.test_session_id)
         self.start_span(test_name)
 
     def end_test(self, data, result):
-        test_name = data.name
+        test_name = self.get_encoded_test_name(data.name)
         test_span = self.spans.get(test_name)
         if test_span:
             context.detach(test_span["token"])
@@ -164,6 +164,9 @@ class SLListener:
         payload = jwt.decode(self.token, algorithms=["RS512"], options={"verify_signature": False})
         api_base_url = payload.get("x-sl-server")
         return f'{api_base_url.replace("api", "sl-api")}/v1'
+
+    def get_encoded_test_name(self, test_name):
+        return quote(test_name, safe="")
 
 
 def selenium_get_url(test_name, test_session_id):
