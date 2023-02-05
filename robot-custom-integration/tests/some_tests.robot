@@ -1,5 +1,6 @@
 *** Settings ***
 Library               RequestsLibrary
+Test Tags             API-Tests
 
 *** Test Cases ***
 Test-Owners

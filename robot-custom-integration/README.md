@@ -29,11 +29,17 @@ Listener interface to facilitate calls to SeaLights API at appropriate phases of
   This commands inspects the active Python site-packages and figures out which instrumentation packages the user might want to install. By default it prints out a list of the suggested instrumentation packages which can be added to a requirements.txt file. It also supports installing the suggested packages when run with --action=install flag.
 
 
-* The listener is taken into use from the command line with the `--listener` option so that the name of the listener is given to it as an argument. Additional command arguments are specified after the listener name (or path) using a colon (`:`) as a separator like `--listener “SLListener.py:<Token>:<buildSessionId>:<Test Stage Name>:<LabId>"`
+* The listener is taken into use from the command line with the `--listener` option so that the name of the listener is given to it as an argument. Additional command arguments are specified after the listener name (or path) using a colon (`:`) as a separator
   * Token
   * buildSessionId
   * Test Stage name
   * (Optional) LabId
+
+* If you have test cases that behave like test steps and use robot's report by tag then please use the "SLTagsListener"
+  `--listener “SLTagsListener.py:<Token>:<buildSessionId>:<Test Stage Name>:<LabId>"`
+  ![statistics-by-tag](statistics-by-tag.png)
+* If you use robot's report by test case then please use the "SLListener"
+  `--listener “SLListener.py:<Token>:<buildSessionId>:<Test Stage Name>:<LabId>"`
 
 ## Running the example with SeaLights
 

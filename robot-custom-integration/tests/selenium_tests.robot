@@ -1,6 +1,7 @@
 *** Settings ***
 Library                 RequestsLibrary
 Library                 SeleniumLibrary
+Test Tags               Selenium-Tests
 
 *** Variables ***
 ${LOGIN URL}      http://localhost:4200
