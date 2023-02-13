@@ -1,11 +1,12 @@
-import functools
 import os
-
 os.environ["OTEL_METRICS_EXPORTER"] = "none"
 os.environ["OTEL_TRACES_EXPORTER"] = "none"
 # DO NOT REMOVE THIS IMPORT
 # It allows auto instrumentation for robot and pabot use cases
 import opentelemetry.instrumentation.auto_instrumentation.sitecustomize
+import functools
+from collections import Counter
+from itertools import groupby
 from urllib.parse import quote as quote
 import datetime
 import requests
@@ -24,7 +25,7 @@ SEALIGHTS_LOG_TAG = '[SeaLights]'
 TEST_STATUS_MAP = {"FAIL": "failed", "SKIP": "skipped"}
 
 
-class SLListener:
+class SLTagsListener:
     ROBOT_LISTENER_API_VERSION = 3
 
     def __init__(self, sltoken, bsid, stagename, labid=""):
@@ -36,11 +37,12 @@ class SLListener:
         self.test_session_id = None
         self.labid = labid or bsid
         self.spans = {}
+        self.tests_to_tag = {}
 
     def start_suite(self, suite, result):
         if not suite.tests:
             return
-        print(f'{SEALIGHTS_LOG_TAG} {len(suite.tests)} tests in suite {suite.longname}')
+        # self.tests_to_tag = {test.name: self.try_get_test_name(test) for test in suite.tests}
         if not self.test_session_id:
             # initialize the test session so that all the tests can be identified by SeaLights
             self.create_test_session()
@@ -48,20 +50,22 @@ class SLListener:
         self.excluded_tests = set(self.get_excluded_tests())
         self.mark_tests_to_be_skipped(suite)
 
-    def end_suite(self, date, result):
+    def end_suite(self, data, result):
         if not self.test_session_id:
             return
         test_results = self.build_test_results(result)
         self.send_test_results(test_results)
         self.end_test_session()
 
-    def start_test(self, data, result):
-        test_name = self.get_encoded_test_name(data.name)
+    def start_test(self, test, result):
+        test_name = self.try_get_test_name(test)
+        test_name = self.get_encoded_test_name(test_name)
         self.try_instrument_selenium(test_name, self.test_session_id)
         self.start_span(test_name)
 
-    def end_test(self, data, result):
-        test_name = self.get_encoded_test_name(data.name)
+    def end_test(self, test, result):
+        test_name = self.try_get_test_name(test)
+        test_name = self.get_encoded_test_name(test_name)
         test_span = self.spans.get(test_name)
         if test_span:
             context.detach(test_span["token"])
@@ -97,8 +101,9 @@ class SLListener:
         # Narrow the test suite to only the recommended tests by Sealights
         all_tests = set()
         for test in suite.tests:
-            all_tests.add(test.name)
-            if test.name not in self.excluded_tests:
+            test_name = self.try_get_test_name(test)
+            all_tests.add(test_name)
+            if test_name not in self.excluded_tests:
                 continue
             test.body.create_keyword(name="SKIP")
             skip_keyword = test.body.pop()
@@ -109,13 +114,23 @@ class SLListener:
 
     def build_test_results(self, result):
         # Collect and report test results to SeaLights including start and end time
-        tests = []
-        for test in result.tests:
-            test_status = TEST_STATUS_MAP.get(test.status, "passed")
-            start_ms = self.get_epoch_timestamp(result.starttime)
-            end_ms = self.get_epoch_timestamp(result.endtime)
-            tests.append({"name": test.name, "status": test_status, "start": start_ms, "end": end_ms})
-        return tests
+        test_results = []
+        sorted_tests = sorted(result.tests, key=lambda test: self.try_get_test_name(test))
+        results = groupby(sorted_tests, key=lambda test: self.try_get_test_name(test))
+        for test_name, tests in results:
+            tests = list(tests)
+            start_times_ms, end_times_ms, test_statuses = self.extract_times_and_statuses(tests)
+            start_ms = min(start_times_ms)
+            end_ms = max(end_times_ms)
+            status_count = Counter(test_statuses)
+            if status_count.get("skipped", 0) == len(tests):
+                test_status = "skipped"
+            elif status_count.get("failed", 0) > 0:
+                test_status = "failed"
+            else:
+                test_status = "passed"
+            test_results.append({"name": test_name, "status": test_status, "start": start_ms, "end": end_ms})
+        return test_results
 
     def send_test_results(self, test_results):
         if not test_results:
@@ -167,6 +182,16 @@ class SLListener:
 
     def get_encoded_test_name(self, test_name):
         return quote(test_name, safe="")
+
+    def try_get_test_name(self, test):
+        return test.tags[0] if len(test.tags) > 0 else test.name
+
+    def extract_times_and_statuses(self, tests):
+        data = map(lambda test: (self.get_epoch_timestamp(test.starttime),
+                                 self.get_epoch_timestamp(test.endtime),
+                                 TEST_STATUS_MAP.get(test.status, "passed")), tests)
+        start_times_ms, end_times_ms, test_statuses = zip(*data)
+        return start_times_ms, end_times_ms, test_statuses
 
 
 def selenium_get_url(test_name, test_session_id):
