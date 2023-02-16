@@ -26,7 +26,7 @@ After a successful build can you should have a resulting `sl_web` folder under t
 The very first thing we need before running our tests is having an open test session -
 and in order to open a test session we can use the [globalSetup](https://playwright.dev/docs/test-advanced#global-setup-and-teardown)
 from Playwright's advanced configuration. <br>
-Before addint the config file in `playwright.config.js` we need to specify where the file is located:
+Before adding the config file in `playwright.config.js` we need to specify where the file is located:
 ```ecmascript 6
 module.exports = defineConfig({
     globalSetup: require.resolve("./playwright/global-setup.js"),
@@ -63,9 +63,10 @@ test.beforeEach(async ({ page }, testInfo) => {
       });
       window.dispatchEvent(customEvent);
     },
-    { title, testSession }
+    { title, testSession: process.env.testSessionId }
   );
   await page.goto("http://localhost:3333");
+  testStartTime = Date.now();
 });
 ```
 
@@ -99,22 +100,23 @@ test.afterEach(async ({ page }, testInfo) => {
 ## 5. End the test session
 Again we use the global configuration from Playwright but this time `globalTeardown`:
 ```ecmascript 6
-const { chromium } = require("@playwright/test");
 const SLService = require("../services/sealightsService");
 
 module.exports = async (config) => {
-    const { baseURL } = config.projects[0].use;
-    const browser = await chromium.launch();
-    const page = await browser.newPage();
-    await page.goto(baseURL);
-    // Submit all footprints before closing the browser
-    await page.evaluate(async () => {
-        await window.$SealightsAgent.sendAllFootprints();
-    });
-    // End the current test session after the running suite
+   // End the current test session after the running suite
     await SLService.endTestSession(process.env.testSessionId);
     await browser.close();
 };
+```
+
+And at the same time we want to assure all footprints have been sent to Sealights:
+```ecmascript 6
+test.afterAll(async ({ page }) => {
+  // Submit all footprints
+  await page.evaluate(async () => {
+    await window.$SealightsAgent.sendAllFootprints();
+  });
+});
 ```
 
 ## Run

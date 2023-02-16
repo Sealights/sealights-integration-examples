@@ -50,6 +50,13 @@ test.afterEach(async ({ page }, testInfo) => {
   testStartTime = undefined;
 });
 
+test.afterAll(async ({ page }) => {
+  // Submit all footprints
+  await page.evaluate(async () => {
+    await window.$SealightsAgent.sendAllFootprints();
+  });
+});
+
 test("Sum two numbers", async ({ page }) => {
   await page.locator("#number1").fill("5");
   await page.locator("#number2").fill("3");
