@@ -1,14 +1,7 @@
 const { test, expect } = require("@playwright/test");
 const SLService = require("../services/sealightsService");
 
-let testSession;
 let testStartTime;
-
-test.beforeAll(async () => {
-  // Start a test session
-  const { testSessionId } = (await SLService.createTestSession()).data;
-  testSession = testSessionId;
-});
 
 test.beforeEach(async ({ page }, testInfo) => {
   // Capture and output logs from browser console
@@ -25,7 +18,7 @@ test.beforeEach(async ({ page }, testInfo) => {
       });
       window.dispatchEvent(customEvent);
     },
-    { title, testSession }
+    { title, testSession: process.env.testSessionId }
   );
   await page.goto("http://localhost:3333");
   testStartTime = Date.now();
@@ -39,23 +32,22 @@ test.afterEach(async ({ page }, testInfo) => {
   });
   // Send test event to Sealights
   const { title, status } = testInfo;
-  console.log(testSession, title, testStartTime, Date.now(), status);
+  console.log(
+    process.env.testSessionId,
+    title,
+    testStartTime,
+    Date.now(),
+    status
+  );
 
   await SLService.sendTestEvent(
-    testSession,
+    process.env.testSessionId,
     title,
     testStartTime,
     Date.now(),
     status
   );
   testStartTime = undefined;
-});
-
-test.afterAll(async ({ page }) => {
-  // End the current test session after the running suite
-  await page.evaluate(async () => {
-    await window.$SealightsAgent.sendAllFootprints();
-  });
 });
 
 test("Sum two numbers", async ({ page }) => {

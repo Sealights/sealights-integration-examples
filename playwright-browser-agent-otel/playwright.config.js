@@ -11,6 +11,8 @@ const { defineConfig, devices } = require("@playwright/test");
  * @see https://playwright.dev/docs/test-configuration
  */
 module.exports = defineConfig({
+  globalSetup: require.resolve("./playwright/global-setup.js"),
+  globalTeardown: require.resolve("./playwright/global-teardown.js"),
   testDir: "./tests",
   /* Maximum time one test can run for. */
   timeout: 30 * 1000,
@@ -40,6 +42,7 @@ module.exports = defineConfig({
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: "on-first-retry",
+    baseURL: "http://localhost:3333/",
   },
 
   /* Configure projects for major browsers */
@@ -84,8 +87,8 @@ module.exports = defineConfig({
   // outputDir: 'test-results/',
 
   /* Run your local dev server before starting the tests */
-  // webServer: {
-  //   command: 'npm run start',
-  //   port: 3000,
-  // },
+  webServer: {
+    command: "cd sl_web && httpster",
+    port: 3333,
+  },
 });

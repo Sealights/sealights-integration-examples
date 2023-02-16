@@ -74,6 +74,7 @@ afterSuite(async () => {
   await evaluate("", async () => {
     await window.$SealightsAgent.sendAllFootprints();
   });
+  await SLService.endTestSession(testSession);
   await closeBrowser();
 });
 

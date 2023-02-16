@@ -24,13 +24,24 @@ After a successful build can you should have a resulting `sl_web` folder under t
 
 ## 2. Setting the `testSessionId` and `testName`
 The very first thing we need before running our tests is having an open test session -
-and in order to open a test session we can use the `test.beforeAll` hook from Playwright like so:
+and in order to open a test session we can use the [globalSetup](https://playwright.dev/docs/test-advanced#global-setup-and-teardown)
+from Playwright's advanced configuration. <br>
+Before addint the config file in `playwright.config.js` we need to specify where the file is located:
 ```ecmascript 6
-test.beforeAll(async () => {
-  // Start a test session
-  const { testSessionId } = (await SLService.createTestSession()).data;
-  testSession = testSessionId;
-});
+module.exports = defineConfig({
+    globalSetup: require.resolve("./playwright/global-setup.js"),
+    globalTeardown: require.resolve("./playwright/global-teardown.js"),
+    ...
+```
+And this is how our current setup looks like:
+```ecmascript 6
+const SLService = require("../services/sealightsService");
+
+module.exports = async () => {
+    // Start a test session
+    const { testSessionId } = (await SLService.createTestSession()).data;
+    process.env.testSessionId = testSessionId;
+};
 ```
 Once we have a test session open we can use the capabilities of the Sealight Browser Agent, particularly the events
 that allow us to set the current 'baggage', in the form of `test name` and the `test session id` (from above).
@@ -86,13 +97,24 @@ test.afterEach(async ({ page }, testInfo) => {
 ```
 
 ## 5. End the test session
+Again we use the global configuration from Playwright but this time `globalTeardown`:
 ```ecmascript 6
-test.afterAll(async ({ page }) => {
-    // End the current test session after the running suite
+const { chromium } = require("@playwright/test");
+const SLService = require("../services/sealightsService");
+
+module.exports = async (config) => {
+    const { baseURL } = config.projects[0].use;
+    const browser = await chromium.launch();
+    const page = await browser.newPage();
+    await page.goto(baseURL);
+    // Submit all footprints before closing the browser
     await page.evaluate(async () => {
         await window.$SealightsAgent.sendAllFootprints();
     });
-});
+    // End the current test session after the running suite
+    await SLService.endTestSession(process.env.testSessionId);
+    await browser.close();
+};
 ```
 
 ## Run
@@ -110,6 +132,5 @@ frontend application (already built) can be found inside the `calculator-app` fo
 To run this demo from scratch:
 ```bash
 cd backend && npm i && npm run start
-cd sl_web && npx httpster
 npm i && npm run test
 ```
