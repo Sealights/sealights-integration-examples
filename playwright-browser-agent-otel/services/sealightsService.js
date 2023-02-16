@@ -28,7 +28,7 @@ const testSessionsV2Instance = axios.create({
 module.exports = {
   createTestSession: async () => {
     const { data } = await testSessionsV1Instance.post("/", {
-      testStage: "Gauge Tests",
+      testStage: "Playwright Tests",
       bsid: buildSessionId,
     });
     return data;
