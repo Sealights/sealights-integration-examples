@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name='sl-python-robot',
     version='1.0.0',
-    install_requires=["requests==2.26.0", "robotframework", "robotframework-requests", "robotframework-pabot", "pyjwt"],
+    install_requires=["requests==2.26.0", "robotframework", "robotframework-requests", "opentelemetry-distro", "robotframework-pabot", "robotframework-seleniumlibrary", "pyjwt"],
     packages=find_packages(),
     url='https://github.com/Sealights/sealights-integration-examples/tree/main/robot-custom-integration',
     license='',
