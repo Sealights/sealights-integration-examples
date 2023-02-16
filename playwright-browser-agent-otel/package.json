@@ -9,7 +9,6 @@
     "jwt-decode": "^3.1.2"
   },
   "devDependencies": {
-    "@playwright/test": "^1.30.0",
-    "cypress": "^12.5.1"
+    "@playwright/test": "^1.30.0"
   }
 }
