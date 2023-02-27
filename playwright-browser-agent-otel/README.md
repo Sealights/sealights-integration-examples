@@ -40,7 +40,7 @@ const SLService = require("../services/sealightsService");
 module.exports = async () => {
     // Start a test session
     const { testSessionId } = (await SLService.createTestSession()).data;
-    process.env.testSessionId = testSessionId;
+    process.env.SEALIGHTS_TEST_SESSION_ID = testSessionId;
 };
 ```
 Once we have a test session open we can use the capabilities of the Sealight Browser Agent, particularly the events
@@ -63,7 +63,7 @@ test.beforeEach(async ({ page }, testInfo) => {
       });
       window.dispatchEvent(customEvent);
     },
-    { title, testSession: process.env.testSessionId }
+    { title, testSession: process.env.SEALIGHTS_TEST_SESSION_ID }
   );
   await page.goto("http://localhost:3333");
   testStartTime = Date.now();
@@ -104,7 +104,7 @@ const SLService = require("../services/sealightsService");
 
 module.exports = async (config) => {
    // End the current test session after the running suite
-    await SLService.endTestSession(process.env.testSessionId);
+    await SLService.endTestSession(process.env.SEALIGHTS_TEST_SESSION_ID);
     await browser.close();
 };
 ```
