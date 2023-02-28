@@ -119,41 +119,6 @@ test.afterAll(async ({ page }) => {
 });
 ```
 
-## 6. Skipping tests
-In Playwright tests can be skipped when marked using `test.skip()` method.
-We can achieve this for every test by calling a function from our `test.beforeEach` hook
-and checking if the current test name is included in an array of recommended tests to run from Sealights.
-```ecmascript 6
-// In test.beforeEach...
-//Skips a test if it's NOT found in process.env.SEALIGHTS_RECOMMENDED_TESTS_RUN array
-checkShouldSkipTest(testInfo.title);
-```
-This is one sample implementation of the above function and it's logic:
-```ecmascript 6
-function checkShouldSkipTest(testName) {
-  const sealightsRecommendedTests =
-    process.env.SEALIGHTS_RECOMMENDED_TESTS_RUN || "[]";
-  const recommendedTestsRun = JSON.parse(sealightsRecommendedTests);
-  if (!recommendedTestsRun?.length) return;
-
-  test.skip(
-    !recommendedTestsRun.find(
-      (recommendedTestName) => recommendedTestName === testName
-    ),
-    "Skipped test, not found in Sealights recommended array"
-  );
-}
-```
-And for the purpose of demonstration we set the `SEALIGHTS_RECOMMENDED_TESTS_RUN` environment
-variable with mock values currently in our `global-setup.js` file.
-```ecmascript 6
-process.env.SEALIGHTS_RECOMMENDED_TESTS_RUN = JSON.stringify([
-    "Sum two numbers",
-    "Subtract two numbers",
-]);
-```
-Playwright will in this case only run the tests from the `SEALIGHTS_RECOMMENDED_TESTS_RUN` array.
-
 ## Run
 In order to run the project a backend is required that implements 2 APIs and running on port `8080`
 ```
