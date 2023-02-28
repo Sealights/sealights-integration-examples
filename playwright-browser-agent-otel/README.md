@@ -16,7 +16,7 @@ If this command ran successfully you should have `buildSessionId` file in the sa
 ```bash
 npx slnodejs scan --workspacepath ./calculator-app --tokenfile sltoken.txt --buildsessionidfile buildSessionId --scm none --instrumentForBrowsers --enableOpenTelemetry --outputpath "sl_web"
 ```
-**IMPORTANT**: Make sure you are running `slnodejs >= 6.1.278` with `npx`, to clear cache use `npx clear-npx-cache`.
+**IMPORTANT**: Make sure you are running `slnodejs >= 6.1.321` with `npx`, to clear cache use `npx clear-npx-cache`.
 
 After a successful build can you should have a resulting `sl_web` folder under this one and can continue with the steps bellow.
 
