@@ -10,7 +10,7 @@ newman run PostmanSampleIntegration.postman_collection.json
 
 3. create a sealights custom reporter
 
-https://github.com/postmanlabs/newman/tree/2a57036bc96c6e06289238cb4ef3fe70c1f9f338#creating-your-own-reporter
+https://github.com/postmanlabs/newman/tree/develop#creating-your-own-reporter
 
 npm pack
 sudo npm i -g newman-reporter-sealights-0.1.0.tgz
@@ -24,7 +24,7 @@ newman run PostmanSampleCollection.json -r cli,sealights --reporter-sealights-to
 
 5. Capture all relevant events
 
-https://github.com/postmanlabs/newman/tree/2a57036bc96c6e06289238cb4ef3fe70c1f9f338#newmanrunevents
+https://github.com/postmanlabs/newman/tree/develop#newmanrunevents
 
 4. call slnodejs agent via CLI from the Reporter
 
