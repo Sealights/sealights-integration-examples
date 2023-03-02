@@ -89,7 +89,7 @@ $SealightsJson = ConvertTo-Json -InputObject @( [xml]$(Get-Content -Path $XmlTes
 
 Start-Sleep -s 1
 
-iwr -verbose -Uri "https://$SL_DOMAIN/sl-api/v1/test-sessions/$SL_TEST_SESSION_ID" -Method 'Post' -Body $SealightsJson -Headers $header 
+iwr -verbose -Uri "https://$SL_DOMAIN/sl-api/v2/test-sessions/$SL_TEST_SESSION_ID" -Method 'Post' -Body $SealightsJson -Headers $header 
 
 Start-Sleep -s 2
 
