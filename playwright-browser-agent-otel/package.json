@@ -1,0 +1,14 @@
+{
+  "name": "sl-browser-agent-playwright-integration",
+  "description": "Sample project demonstrating usage of Sealights Browser Agent with OTEL flavor and Playwright tests",
+  "scripts": {
+    "test": "npx playwright test"
+  },
+  "dependencies": {
+    "axios": "^1.2.3",
+    "jwt-decode": "^3.1.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.30.0"
+  }
+}
