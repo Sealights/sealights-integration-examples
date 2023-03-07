@@ -39,10 +39,12 @@ beforeScenario(async (scenario) => {
     "",
     async (element, args) => {
       const testName = args.scenario.currentScenario.name;
-      const customEvent = new CustomEvent("set:baggage", {
+      const customEvent = new CustomEvent("set:context", {
         detail: {
-          "x-sl-test-name": testName,
-          "x-sl-test-session-id": args.testSession,
+          baggage: {
+            "x-sl-test-name": testName,
+            "x-sl-test-session-id": args.testSession,
+          },
         },
       });
       window.dispatchEvent(customEvent);
@@ -53,9 +55,9 @@ beforeScenario(async (scenario) => {
 });
 
 afterScenario(async (scenario) => {
-  // Unset baggage after scenario
+  // Delete context after scenario
   await evaluate("", async () => {
-    const customEvent = new CustomEvent("delete:baggage");
+    const customEvent = new CustomEvent("delete:context");
     window.dispatchEvent(customEvent);
   });
   // Send test event to Sealights

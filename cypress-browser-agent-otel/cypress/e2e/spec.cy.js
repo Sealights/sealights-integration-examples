@@ -25,10 +25,12 @@ describe("Calculator app tests", async () => {
     cy.window().then((win) => {
       // Set the correct baggage before a scenario runs with testName and the current testSessionId
       const testName = Cypress.currentTest.title;
-      const customEvent = new CustomEvent("set:baggage", {
+      const customEvent = new CustomEvent("set:context", {
         detail: {
-          "x-sl-test-name": testName,
-          "x-sl-test-session-id": testSession,
+          baggage: {
+            "x-sl-test-name": testName,
+            "x-sl-test-session-id": testSession,
+          },
         },
       });
       win.dispatchEvent(customEvent);
@@ -50,8 +52,8 @@ describe("Calculator app tests", async () => {
     testStartTime = undefined;
 
     cy.window().then((win) => {
-      // Unset baggage after scenario
-      const customEvent = new CustomEvent("delete:baggage");
+      // Delete context after scenario
+      const customEvent = new CustomEvent("delete:context");
       win.dispatchEvent(customEvent);
     });
   });

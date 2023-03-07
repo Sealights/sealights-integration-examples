@@ -44,7 +44,7 @@ module.exports = async () => {
 };
 ```
 Once we have a test session open we can use the capabilities of the Sealight Browser Agent, particularly the events
-that allow us to set the current 'baggage', in the form of `test name` and the `test session id` (from above).
+that allow us to set the current 'context' and `baggage`, in the form of `test name` and the `test session id` (from above).
 We can achieve this using the `test.beforeEach` hook from Playwright like so:
 
 ```ecmascript6
@@ -70,12 +70,12 @@ test.beforeEach(async ({ page }, testInfo) => {
 });
 ```
 
-## 3. Unset the current baggage after each test scenario
+## 3. Unset the current context after each scenario
 ```ecmascript 6
 test.afterEach(async ({ page }, testInfo) => {
-    // Unset baggage after scenario
+    // Unset context after scenario
     await page.evaluate(() => {
-        const customEvent = new CustomEvent("delete:baggage");
+        const customEvent = new CustomEvent("delete:context");
         window.dispatchEvent(customEvent);
     });
 });
