@@ -10,10 +10,12 @@ test.beforeEach(async ({ page }, testInfo) => {
   const title = testInfo.title;
   await page.evaluate(
     ({ title, testSession }) => {
-      const customEvent = new CustomEvent("set:baggage", {
+      const customEvent = new CustomEvent("set:context", {
         detail: {
-          "x-sl-test-name": title,
-          "x-sl-test-session-id": testSession,
+          baggage: {
+            "x-sl-test-name": title,
+            "x-sl-test-session-id": testSession,
+          },
         },
       });
       window.dispatchEvent(customEvent);
@@ -25,9 +27,9 @@ test.beforeEach(async ({ page }, testInfo) => {
 });
 
 test.afterEach(async ({ page }, testInfo) => {
-  // Unset baggage after scenario
+  // Delete context after scenario
   await page.evaluate(() => {
-    const customEvent = new CustomEvent("delete:baggage");
+    const customEvent = new CustomEvent("delete:context");
     window.dispatchEvent(customEvent);
   });
   // Send test event to Sealights

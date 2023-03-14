@@ -16,7 +16,7 @@ If this command ran successfully you should have `buildSessionId` file in the sa
 ```bash
 npx slnodejs scan --workspacepath ./calculator-app --tokenfile sltoken.txt --buildsessionidfile buildSessionId --scm none --instrumentForBrowsers --enableOpenTelemetry --outputpath "sl_web"
 ```
-**IMPORTANT**: Make sure you are running `slnodejs >= 6.1.278` with `npx`, to clear cache use `npx clear-npx-cache`.
+**IMPORTANT**: Make sure you are running `slnodejs >= 6.1.327` with `npx`, to clear cache use `npx clear-npx-cache`.
 
 After a successful build can you should have a resulting `sl_web` folder under this one and can continue with the steps bellow.
 
@@ -42,28 +42,30 @@ before(async () => {
   ....
 ```
 Once we have a test session open we can use the capabilities of the Sealight Browser Agent, particularly the events
-that allow us to set the current 'baggage', in the form of `test name` and the `test session id` (from above).
+that allow us to set the current 'context' and `baggage`, in the form of `test name` and the `test session id` (from above).
 We can achieve this using the `beforeEach` hook from Cypress like so:
 
 ```ecmascript6
 beforeEach(async (scenario) => {
-  // Set the correct baggage before a scenario runs with testName and the current testSessionId
+  // Set the correct context (baggage) before a scenario runs with testName and the current testSessionId
   const testName = Cypress.currentTest.title;
-  const customEvent = new CustomEvent("set:baggage", {
+  const customEvent = new CustomEvent("set:context", {
      detail: {
-       "x-sl-test-name": testName,
-       "x-sl-test-session-id": testSessionId,
+       baggage: {
+         "x-sl-test-name": testName,
+         "x-sl-test-session-id": testSession,
+       },
      },
   });
   window.dispatchEvent(customEvent);
 });
 ```
 
-## 3. Unset the current baggage after each scenario
+## 3. Unset the current context after each scenario
 ```ecmascript 6
 afterEach(async () => {
-  // Unset baggage after scenario
-  const customEvent = new CustomEvent("delete:baggage");
+  // Unset context after scenario
+  const customEvent = new CustomEvent("delete:context");
   window.dispatchEvent(customEvent);
 });
 ```
