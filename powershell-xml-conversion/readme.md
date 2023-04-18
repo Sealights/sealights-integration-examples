@@ -4,13 +4,15 @@
 > **Note**
 >
 > For better accuracy of Sealights Test Optimization, please make sure to set your XML report timestamps in milliseconds. 
-> For example, you can change the parameter timestampFormat in your XML Reporter settings from yyyy-MM-dd'T'HH:mm:ss'Z' to yyyy-MM-dd'T'HH:mm:ss.SSS'Z', for that purpose.
+> For example, you can change the parameter timestampFormat in your XML Reporter settings from `yyyy-MM-dd'T'HH:mm:ss'Z'` to `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`, for that purpose.
 > 
 
 > **Warning**
 > 
 > Please make sure your XML includes the start time of every single test (tescase in nUnit/JUnit or testmethod in TestNG). 
-> It is misleading to assume the end of the previous test is the start time of the next, since the testing framework does a lot of operations in  between tests (closing of test, saving of results, reading of next test content from the disk) and depending on every test length, this time in-between will significantly vary.
+> 
+> It is *misleading* to assume the _end of the previous test is the start time of the next_, since *the testing framework does a lot of operations in  between tests*.
+> For example: closing of test, saving of results, reading of next test content from the disk,... Depending on every test length, this time in-between will significantly vary and cannot be added as a static duration.
 > 
 
 ---
