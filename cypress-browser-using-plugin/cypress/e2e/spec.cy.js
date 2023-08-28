@@ -17,7 +17,7 @@ describe("Calculator app tests", async () => {
     cy.get("#number1").type(5);
     cy.get("#number2").type(5);
     cy.get("#addBtn").click();
-    cy.get("#result").should("have.text", 10);
+    cy.get("#result").should("have.text", 110);
   });
 
   // Failing on purpose for demo
