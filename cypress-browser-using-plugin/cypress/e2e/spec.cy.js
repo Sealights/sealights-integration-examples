@@ -1,5 +1,5 @@
 describe("Calculator app tests", async () => {
-  beforeEach(() => {
+  before(() => {
     cy.visit("http://localhost:3333");
   });
 

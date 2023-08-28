@@ -7,7 +7,7 @@
   "dependencies": {
     "axios": "^1.2.3",
     "jwt-decode": "^3.1.2",
-    "SL.Cypress.Plugin": "github:kristijanstefanoski/SL.Cypress.Plugin#v1.1.0"
+    "SL.Cypress.Plugin": "github:kristijanstefanoski/SL.Cypress.Plugin#v1.1.1"
   },
   "devDependencies": {
     "cypress": "^12.5.1"
