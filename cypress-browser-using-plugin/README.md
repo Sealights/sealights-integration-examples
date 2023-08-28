@@ -24,7 +24,7 @@ After a successful build can you should have a resulting `sl_web` folder under t
 
 ## 2. Installing the Cypress Plugin
 ```shell
-npm i "https://github.com/kristijanstefanoski/SL.Cypress.Plugin.git#v1.1.1"
+npm i "https://github.com/kristijanstefanoski/SL.Cypress.Plugin.git#v1.1.3"
 ```
 
 ## 3. Configuring Cypress config
