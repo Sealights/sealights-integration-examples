@@ -1,13 +1,11 @@
 const { defineConfig } = require("cypress");
-const registerSealights =
-  require("SL.Cypress.Plugin/dist/code-coverage/config").default;
+const { registerSealightsTasks } = require("sealights-cypress-plugin");
 
 module.exports = defineConfig({
   e2e: {
     experimentalInteractiveRunEvents: true,
-    testIsolation: false,
     setupNodeEvents(on, config) {
-      registerSealights(on, config);
+      registerSealightsTasks(on, config);
     },
   },
 });

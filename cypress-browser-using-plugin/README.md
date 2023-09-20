@@ -1,7 +1,5 @@
 # Overview
 This is a short demo project that uses the Sealights Browser Agent and our Cypress plugin.
-Currently the Cypress plugin in this demo is based off the following repo/branch:
-[SL.Cypress.Plugin](https://github.com/kristijanstefanoski/SL.Cypress.Plugin/tree/service-integration).
 
 # Integration with Sealights - how to
 
@@ -10,7 +8,7 @@ Currently the Cypress plugin in this demo is based off the following repo/branch
 In order to run this demo you need a valid Agent Token stored in a file ex. `sltoken.txt`.
 Then you can proceed to run `slnodejs` config command to generate a new `build session id`:
 ```bash
-npx slnodejs config --tokenfile sltoken.txt --appName "Browser Example" --branch "master" --build 1.0.0
+npx slnodejs config --tokenfile sltoken.txt --appName "Cypress Testing App" --branch "master" --build 1.0.0
 ```
 If this command ran successfully you should have `buildSessionId` file in the same folder and can continue to scan the build:
 ```bash
@@ -24,7 +22,7 @@ After a successful build can you should have a resulting `sl_web` folder under t
 
 ## 2. Installing the Cypress Plugin
 ```shell
-npm i "https://github.com/kristijanstefanoski/SL.Cypress.Plugin.git#v1.1.3"
+npm i sealights-cypress-plugin
 ```
 
 ## 3. Configuring Cypress config
@@ -32,14 +30,13 @@ In your `cypress.config.js` register the plugin like so:
 
 ```javascript
 const { defineConfig } = require("cypress");
-const registerSealights =
-    require("SL.Cypress.Plugin/dist/code-coverage/config").default;
+const { registerSealightsTasks } = require("sealights-cypress-plugin");
 
 module.exports = defineConfig({
     e2e: {
         experimentalInteractiveRunEvents: true, // If you want to run with 'npm cypress open' and still report coverage
         setupNodeEvents(on, config) {
-            registerSealights(on, config);
+            registerSealightsTasks(on, config);
         },
     },
 });
@@ -50,7 +47,7 @@ In your `cypress/support/e2e.js` import our support file:
 ```javascript
 // This is your existing support/e2e.js or index.js file content
 // ...
-import "SL.Cypress.Plugin/dist/code-coverage/support";
+import "sealights-cypress-plugin/support";
 ```
 
 # Required Environment Variables for integration
@@ -58,6 +55,7 @@ In order for the Sealights integration to work, three parameters have to be expo
 This can be done using environment variables and exposing them to Cypress. The three environment variables are:
 ```shell
 SL_BUILD_SESSION_ID
+SL_LAB_ID
 SL_TOKEN
 SL_TEST_STAGE
 ```

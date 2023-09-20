@@ -12,4 +12,4 @@
 // You can read more here:
 // https://on.cypress.io/configuration
 // ***********************************************************
-import "SL.Cypress.Plugin/dist/code-coverage/support";
+import "sealights-cypress-plugin/support";
