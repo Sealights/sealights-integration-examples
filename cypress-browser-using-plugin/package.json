@@ -1,0 +1,13 @@
+{
+  "name": "sl-browser-agent-cypress-plugin-integration",
+  "description": "Sample project demonstrating usage of Sealights Browser Agent + Cypress plugin",
+  "scripts": {
+    "test": "npx cypress run"
+  },
+  "devDependencies": {
+    "cypress": "^10.8.0"
+  },
+  "dependencies": {
+    "sealights-cypress-plugin": "^2.0.17"
+  }
+}
