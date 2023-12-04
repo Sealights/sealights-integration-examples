@@ -8,6 +8,7 @@ test.beforeEach(async ({ page }, testInfo) => {
   page.on("console", (msg) => console.log(msg.text()));
 
   const title = testInfo.title;
+  await page.goto("http://localhost:3333");
   await page.evaluate(
     ({ title, testSession }) => {
       const customEvent = new CustomEvent("set:context", {
@@ -22,7 +23,6 @@ test.beforeEach(async ({ page }, testInfo) => {
     },
     { title, testSession: process.env.SEALIGHTS_TEST_SESSION_ID }
   );
-  await page.goto("http://localhost:3333");
   testStartTime = Date.now();
 });
 
