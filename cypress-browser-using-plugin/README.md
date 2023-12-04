@@ -14,6 +14,8 @@ If this command ran successfully you should have `buildSessionId` file in the sa
 ```bash
 npx slnodejs scan --workspacepath ./calculator-app --tokenfile sltoken.txt --buildsessionidfile buildSessionId --scm none --instrumentForBrowsers --enableOpenTelemetry --outputpath "sl_web"
 ```
+**IMPORTANT**: It may not be obvious from the command above but we added one additional parameter `--enableOpenTelemetry` which turns on coloring of HTTP calls by using the `baggage` header.
+
 **IMPORTANT**: Make sure you are running `slnodejs >= 6.1.327` with `npx`, to clear cache use `npx clear-npx-cache`.
 
 After a successful build can you should have a resulting `sl_web` folder under this one and can continue with the steps bellow.
