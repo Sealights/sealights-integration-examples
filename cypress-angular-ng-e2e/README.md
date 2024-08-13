@@ -165,10 +165,17 @@ Add the following scripts to `package.json`:
 ```javascript
 {
   "scripts": {
-    "serve:dist": "httpster -d dist/cypress-ng-schematic -p 4200",
+    "serve:dist": "npx httpster -d dist/cypress-ng-schematic -p 4200",
     "e2e": "npm run serve:dist & ng e2e && pkill -f httpster"
   }
 }
+```
+
+**NOTE**: Is `npx httpster` does not work for your pipeline, you can install httpster and use it directly <br>
+
+```bash
+npm i httpster
+httpster -d dist/cypress-ng-schematic -p 4200
 ```
 
 ## Explanation:
