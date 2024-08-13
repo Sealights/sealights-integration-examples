@@ -1,0 +1,46 @@
+/**
+ * @license
+ * Copyright Google LLC All Rights Reserved.
+ *
+ * Use of this source code is governed by an MIT-style license that can be
+ * found in the LICENSE file at https://angular.io/license
+ */
+import { throwError } from '../../util/assert';
+import { getComponentDef } from '../definition';
+import { CONTEXT, DECLARATION_COMPONENT_VIEW } from '../interfaces/view';
+/**
+ * WARNING: this is a **dev-mode only** function (thus should always be guarded by the `ngDevMode`)
+ * and must **not** be used in production bundles. The function makes megamorphic reads, which might
+ * be too slow for production mode and also it relies on the constructor function being available.
+ *
+ * Gets a reference to the host component def (where a current component is declared).
+ *
+ * @param lView An `LView` that represents a current component that is being rendered.
+ */
+function getDeclarationComponentDef(lView) {
+    !ngDevMode && throwError('Must never be called in production mode');
+    const declarationLView = lView[DECLARATION_COMPONENT_VIEW];
+    const context = declarationLView[CONTEXT];
+    // Unable to obtain a context.
+    if (!context)
+        return null;
+    return context.constructor ? getComponentDef(context.constructor) : null;
+}
+/**
+ * WARNING: this is a **dev-mode only** function (thus should always be guarded by the `ngDevMode`)
+ * and must **not** be used in production bundles. The function makes megamorphic reads, which might
+ * be too slow for production mode.
+ *
+ * Constructs a string describing the location of the host component template. The function is used
+ * in dev mode to produce error messages.
+ *
+ * @param lView An `LView` that represents a current component that is being rendered.
+ */
+export function getTemplateLocationDetails(lView) {
+    var _a;
+    !ngDevMode && throwError('Must never be called in production mode');
+    const hostComponentDef = getDeclarationComponentDef(lView);
+    const componentClassName = (_a = hostComponentDef === null || hostComponentDef === void 0 ? void 0 : hostComponentDef.type) === null || _a === void 0 ? void 0 : _a.name;
+    return componentClassName ? ` (used in the '${componentClassName}' component template)` : '';
+}
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiZWxlbWVudF92YWxpZGF0aW9uLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vLi4vLi4vLi4vLi4vLi4vLi4vcGFja2FnZXMvY29yZS9zcmMvcmVuZGVyMy9pbnN0cnVjdGlvbnMvZWxlbWVudF92YWxpZGF0aW9uLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiJBQUFBOzs7Ozs7R0FNRztBQUVILE9BQU8sRUFBQyxVQUFVLEVBQUMsTUFBTSxtQkFBbUIsQ0FBQztBQUM3QyxPQUFPLEVBQUMsZUFBZSxFQUFDLE1BQU0sZUFBZSxDQUFDO0FBRTlDLE9BQU8sRUFBQyxPQUFPLEVBQUUsMEJBQTBCLEVBQVEsTUFBTSxvQkFBb0IsQ0FBQztBQUU5RTs7Ozs7Ozs7R0FRRztBQUNILFNBQVMsMEJBQTBCLENBQUMsS0FBWTtJQUM5QyxDQUFDLFNBQVMsSUFBSSxVQUFVLENBQUMseUNBQXlDLENBQUMsQ0FBQztJQUVwRSxNQUFNLGdCQUFnQixHQUFHLEtBQUssQ0FBQywwQkFBMEIsQ0FBVSxDQUFDO0lBQ3BFLE1BQU0sT0FBTyxHQUFHLGdCQUFnQixDQUFDLE9BQU8sQ0FBQyxDQUFDO0lBRTFDLDhCQUE4QjtJQUM5QixJQUFJLENBQUMsT0FBTztRQUFFLE9BQU8sSUFBSSxDQUFDO0lBRTFCLE9BQU8sT0FBTyxDQUFDLFdBQVcsQ0FBQyxDQUFDLENBQUMsZUFBZSxDQUFDLE9BQU8sQ0FBQyxXQUFXLENBQUMsQ0FBQyxDQUFDLENBQUMsSUFBSSxDQUFDO0FBQzNFLENBQUM7QUFFRDs7Ozs7Ozs7O0dBU0c7QUFDSCxNQUFNLFVBQVUsMEJBQTBCLENBQUMsS0FBWTs7SUFDckQsQ0FBQyxTQUFTLElBQUksVUFBVSxDQUFDLHlDQUF5QyxDQUFDLENBQUM7SUFFcEUsTUFBTSxnQkFBZ0IsR0FBRywwQkFBMEIsQ0FBQyxLQUFLLENBQUMsQ0FBQztJQUMzRCxNQUFNLGtCQUFrQixHQUFHLE1BQUEsZ0JBQWdCLGFBQWhCLGdCQUFnQix1QkFBaEIsZ0JBQWdCLENBQUUsSUFBSSwwQ0FBRSxJQUFJLENBQUM7SUFDeEQsT0FBTyxrQkFBa0IsQ0FBQyxDQUFDLENBQUMsa0JBQWtCLGtCQUFrQix1QkFBdUIsQ0FBQyxDQUFDLENBQUMsRUFBRSxDQUFDO0FBQy9GLENBQUMiLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIEBsaWNlbnNlXG4gKiBDb3B5cmlnaHQgR29vZ2xlIExMQyBBbGwgUmlnaHRzIFJlc2VydmVkLlxuICpcbiAqIFVzZSBvZiB0aGlzIHNvdXJjZSBjb2RlIGlzIGdvdmVybmVkIGJ5IGFuIE1JVC1zdHlsZSBsaWNlbnNlIHRoYXQgY2FuIGJlXG4gKiBmb3VuZCBpbiB0aGUgTElDRU5TRSBmaWxlIGF0IGh0dHBzOi8vYW5ndWxhci5pby9saWNlbnNlXG4gKi9cblxuaW1wb3J0IHt0aHJvd0Vycm9yfSBmcm9tICcuLi8uLi91dGlsL2Fzc2VydCc7XG5pbXBvcnQge2dldENvbXBvbmVudERlZn0gZnJvbSAnLi4vZGVmaW5pdGlvbic7XG5pbXBvcnQge0NvbXBvbmVudERlZn0gZnJvbSAnLi4vaW50ZXJmYWNlcy9kZWZpbml0aW9uJztcbmltcG9ydCB7Q09OVEVYVCwgREVDTEFSQVRJT05fQ09NUE9ORU5UX1ZJRVcsIExWaWV3fSBmcm9tICcuLi9pbnRlcmZhY2VzL3ZpZXcnO1xuXG4vKipcbiAqIFdBUk5JTkc6IHRoaXMgaXMgYSAqKmRldi1tb2RlIG9ubHkqKiBmdW5jdGlvbiAodGh1cyBzaG91bGQgYWx3YXlzIGJlIGd1YXJkZWQgYnkgdGhlIGBuZ0Rldk1vZGVgKVxuICogYW5kIG11c3QgKipub3QqKiBiZSB1c2VkIGluIHByb2R1Y3Rpb24gYnVuZGxlcy4gVGhlIGZ1bmN0aW9uIG1ha2VzIG1lZ2Ftb3JwaGljIHJlYWRzLCB3aGljaCBtaWdodFxuICogYmUgdG9vIHNsb3cgZm9yIHByb2R1Y3Rpb24gbW9kZSBhbmQgYWxzbyBpdCByZWxpZXMgb24gdGhlIGNvbnN0cnVjdG9yIGZ1bmN0aW9uIGJlaW5nIGF2YWlsYWJsZS5cbiAqXG4gKiBHZXRzIGEgcmVmZXJlbmNlIHRvIHRoZSBob3N0IGNvbXBvbmVudCBkZWYgKHdoZXJlIGEgY3VycmVudCBjb21wb25lbnQgaXMgZGVjbGFyZWQpLlxuICpcbiAqIEBwYXJhbSBsVmlldyBBbiBgTFZpZXdgIHRoYXQgcmVwcmVzZW50cyBhIGN1cnJlbnQgY29tcG9uZW50IHRoYXQgaXMgYmVpbmcgcmVuZGVyZWQuXG4gKi9cbmZ1bmN0aW9uIGdldERlY2xhcmF0aW9uQ29tcG9uZW50RGVmKGxWaWV3OiBMVmlldyk6IENvbXBvbmVudERlZjx1bmtub3duPnxudWxsIHtcbiAgIW5nRGV2TW9kZSAmJiB0aHJvd0Vycm9yKCdNdXN0IG5ldmVyIGJlIGNhbGxlZCBpbiBwcm9kdWN0aW9uIG1vZGUnKTtcblxuICBjb25zdCBkZWNsYXJhdGlvbkxWaWV3ID0gbFZpZXdbREVDTEFSQVRJT05fQ09NUE9ORU5UX1ZJRVddIGFzIExWaWV3O1xuICBjb25zdCBjb250ZXh0ID0gZGVjbGFyYXRpb25MVmlld1tDT05URVhUXTtcblxuICAvLyBVbmFibGUgdG8gb2J0YWluIGEgY29udGV4dC5cbiAgaWYgKCFjb250ZXh0KSByZXR1cm4gbnVsbDtcblxuICByZXR1cm4gY29udGV4dC5jb25zdHJ1Y3RvciA/IGdldENvbXBvbmVudERlZihjb250ZXh0LmNvbnN0cnVjdG9yKSA6IG51bGw7XG59XG5cbi8qKlxuICogV0FSTklORzogdGhpcyBpcyBhICoqZGV2LW1vZGUgb25seSoqIGZ1bmN0aW9uICh0aHVzIHNob3VsZCBhbHdheXMgYmUgZ3VhcmRlZCBieSB0aGUgYG5nRGV2TW9kZWApXG4gKiBhbmQgbXVzdCAqKm5vdCoqIGJlIHVzZWQgaW4gcHJvZHVjdGlvbiBidW5kbGVzLiBUaGUgZnVuY3Rpb24gbWFrZXMgbWVnYW1vcnBoaWMgcmVhZHMsIHdoaWNoIG1pZ2h0XG4gKiBiZSB0b28gc2xvdyBmb3IgcHJvZHVjdGlvbiBtb2RlLlxuICpcbiAqIENvbnN0cnVjdHMgYSBzdHJpbmcgZGVzY3JpYmluZyB0aGUgbG9jYXRpb24gb2YgdGhlIGhvc3QgY29tcG9uZW50IHRlbXBsYXRlLiBUaGUgZnVuY3Rpb24gaXMgdXNlZFxuICogaW4gZGV2IG1vZGUgdG8gcHJvZHVjZSBlcnJvciBtZXNzYWdlcy5cbiAqXG4gKiBAcGFyYW0gbFZpZXcgQW4gYExWaWV3YCB0aGF0IHJlcHJlc2VudHMgYSBjdXJyZW50IGNvbXBvbmVudCB0aGF0IGlzIGJlaW5nIHJlbmRlcmVkLlxuICovXG5leHBvcnQgZnVuY3Rpb24gZ2V0VGVtcGxhdGVMb2NhdGlvbkRldGFpbHMobFZpZXc6IExWaWV3KTogc3RyaW5nIHtcbiAgIW5nRGV2TW9kZSAmJiB0aHJvd0Vycm9yKCdNdXN0IG5ldmVyIGJlIGNhbGxlZCBpbiBwcm9kdWN0aW9uIG1vZGUnKTtcblxuICBjb25zdCBob3N0Q29tcG9uZW50RGVmID0gZ2V0RGVjbGFyYXRpb25Db21wb25lbnREZWYobFZpZXcpO1xuICBjb25zdCBjb21wb25lbnRDbGFzc05hbWUgPSBob3N0Q29tcG9uZW50RGVmPy50eXBlPy5uYW1lO1xuICByZXR1cm4gY29tcG9uZW50Q2xhc3NOYW1lID8gYCAodXNlZCBpbiB0aGUgJyR7Y29tcG9uZW50Q2xhc3NOYW1lfScgY29tcG9uZW50IHRlbXBsYXRlKWAgOiAnJztcbn1cbiJdfQ==

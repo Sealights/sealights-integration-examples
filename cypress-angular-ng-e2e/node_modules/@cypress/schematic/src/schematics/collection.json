@@ -1,0 +1,28 @@
+{
+  "$schema": "../../node_modules/@angular-devkit/schematics/collection-schema.json",
+  "schematics": {
+    "ng-add": {
+      "description": "Adds Cypress to an Angular project.",
+      "factory": "./ng-add/index",
+      "schema": "./ng-add/schema.json"
+    },
+    "spec": {
+      "description": "Create a single spec file",
+      "factory": "./ng-generate/cypress-test/index",
+      "schema": "./ng-generate/cypress-test/schema.json"
+    },
+    "specs-ct": {
+      "description": "Create spec files for all Angular components in a project",
+      "factory": "./ng-generate/cypress-ct-tests/index",
+      "schema": "./ng-generate/cypress-ct-tests/schema.json"
+    },
+    "component": {
+      "description": "Creates a new, generic component definition in the given or default project.",
+      "aliases": [
+        "c"
+      ],
+      "factory": "./ng-generate/component/index",
+      "schema": "./ng-generate/component/schema.json"
+    }
+  }
+}
