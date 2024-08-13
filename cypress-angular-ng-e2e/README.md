@@ -185,3 +185,9 @@ This setup ensures that your Cypress tests will run against the production build
 
 **IMPORTANT**: `pfkill` is a Unix-like operating system command, you might need to adjust this for your operating system. For example on Windows, the command `pkill` is not available. Instead, you can use `taskkill` to terminate the process. To adapt the script for Windows, you can replace the `pkill -f httpster` with a `taskkill` command.
 <br>
+
+## Running
+
+```bash
+npm run e2e
+```
