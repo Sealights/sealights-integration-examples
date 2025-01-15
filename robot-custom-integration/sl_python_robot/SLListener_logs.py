@@ -32,9 +32,9 @@ class SLListener:
     LOG_API_BASE_URL = "api/v2"  # For log submissions
     SL_API_BASE_URL_V1 = "sl-api/v1"  # For test session, exclusions, etc.
 
-    def __init__(self, sltoken, bsid, stagename, labid=""):
-        print(f"Initializing SLListener with: sltoken={os.getenv("sltoken")}, bsid={bsid}, stagename={stagename}, labid={labid}")
-        self.token = os.getenv("sltoken")
+    def __init__(self, bsid, stagename, labid=""):
+        print(f"Initializing SLListener with: sltoken={os.getenv("SL_TOKEN")}, bsid={bsid}, stagename={stagename}, labid={labid}")
+        self.token = os.getenv("SL_TOKEN")
         self.base_url = self.extract_sl_endpoint()
         self.bsid = bsid
         self.stage_name = stagename
