@@ -33,7 +33,7 @@ class SLListener:
     SL_API_BASE_URL_V1 = "sl-api/v1"  # For test session, exclusions, etc.
 
     def __init__(self, bsid, stagename, labid=""):
-        print(f"Initializing SLListener with: sltoken={os.getenv("SL_TOKEN")}, bsid={bsid}, stagename={stagename}, labid={labid}")
+        print(f"Initializing SLListener with: sltoken={os.getenv('SL_TOKEN')}, bsid={bsid}, stagename={stagename}, labid={labid}")
         self.token = os.getenv("SL_TOKEN")
         self.base_url = self.extract_sl_endpoint()
         self.bsid = bsid
