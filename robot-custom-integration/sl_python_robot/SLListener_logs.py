@@ -33,8 +33,7 @@ class SLListener:
     SL_API_BASE_URL_V1 = "sl-api/v1"  # For test session, exclusions, etc.
 
     def __init__(self, bsid, stagename, labid=""):
-        print(f"Initializing SLListener with: sltoken={os.getenv('SL_TOKEN')}, bsid={bsid}, stagename={stagename}, labid={labid}")
-        self.token = os.getenv("SL_TOKEN")
+        self.token = os.getenv('SL_TOKEN')
         self.base_url = self.extract_sl_endpoint()
         self.bsid = bsid
         self.stage_name = stagename
@@ -43,6 +42,7 @@ class SLListener:
         self.labid = labid or bsid
         self.spans = {}
         self.app_name = None
+        print(f"Initializing SLListener with: sltoken={self.token}, bsid={self.bsid}, stage_name={self.stage_name}, labid={self.labid}")
 
     def generate_tx_id(self):
         return str(uuid.uuid4())
@@ -84,6 +84,7 @@ class SLListener:
                         headers=self.get_header()
                     ).json()
             self.app_name = build['data']['appName']
+            self.log(f"initialized app_name: {self.app_name}")
         self.log(f"{len(suite.tests)} tests in suite {suite.longname}")
         if not self.test_session_id:
             self.create_test_session()
@@ -199,7 +200,7 @@ class SLListener:
 
     def extract_sl_endpoint(self):
         payload = jwt.decode(self.token, algorithms=["RS512"], options={"verify_signature": False})
-        return payload.get("x-sl-server")[:-3]
+        return payload.get("x-sl-server")[:-4]
 
     def get_encoded_test_name(self, test_name):
         return quote(test_name, safe="")
