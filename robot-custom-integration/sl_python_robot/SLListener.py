@@ -90,7 +90,7 @@ class SLListener:
         print(f'{SEALIGHTS_LOG_TAG} Retrieving Recommendations: {"OK" if recommendations.ok else f"Error {recommendations.status_code}"}')
         if recommendations.status_code == 200:
             excluded_tests = recommendations.json()["data"]
-        print(f'{SEALIGHTS_LOG_TAG} {len(self.excluded_tests)} Skipped tests: {excluded_tests}')
+        print(f'{SEALIGHTS_LOG_TAG} {len(excluded_tests)} Skipped tests: {excluded_tests}')
         return excluded_tests
 
     def mark_tests_to_be_skipped(self, suite):
