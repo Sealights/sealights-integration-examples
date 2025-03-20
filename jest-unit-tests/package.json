@@ -4,12 +4,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "test:ts": "jest --config jest.config.js",
-    "test:js": "npm run build && jest --config jest.config.js.js",
-    "test": "npm run test:ts",
-    "test:watch": "jest --config jest.config.js --watch",
-    "test:sealights:ts": "jest --config jest.config.js --sl-testStage='TypeScript Tests' --sl-tokenfile=sltoken.txt --sl-buildsessionidfile=buildSessionId",
-    "test:sealights:js": "npm run build && jest --config jest.config.js.js --sl-testStage='JavaScript Tests' --sl-tokenfile=sltoken.txt --sl-buildsessionidfile=buildSessionId"
+    "test:sealights:js": "npm run build && jest --config jest.config.js --sl-testStage='JavaScript Tests'"
   },
   "keywords": [
     "jest",

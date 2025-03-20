@@ -2,10 +2,10 @@
 const { configCreator } = require('sealights-jest-plugin');
 
 const config = {
-  preset: 'ts-jest',
-  testEnvironment: 'node',
-  testMatch: ['<rootDir>/test/**/*.test.ts'],
-  verbose: true
+  testEnvironment: "node",
+  testMatch: ["<rootDir>/dist/test/**/*.test.js"],
+  verbose: true,
+  rootDir: ".",
 };
 
 module.exports = configCreator(config); 

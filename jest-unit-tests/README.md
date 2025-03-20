@@ -2,6 +2,8 @@
 
 This project demonstrates how to set up a TypeScript project with Jest unit testing and integrate it with the Sealights Jest Plugin. It uses a simple calculator implementation as an example.
 
+**NOTE:** Running the tests with `ts-jest` is not supported by the Sealights Jest Plugin!
+
 ## Project Structure
 
 ```
@@ -10,8 +12,7 @@ jest-unit-tests/
 │   └── index.ts         # Calculator implementation
 ├── test/
 │   └── calculator.test.ts    # Test cases
-├── jest.config.js       # TypeScript Jest configuration
-├── jest.config.js.js    # JavaScript Jest configuration
+├── jest.config.js       # Jest configuration
 ├── tsconfig.json        # TypeScript configuration
 └── package.json         # Project dependencies and scripts
 ```
@@ -28,14 +29,6 @@ npm install
 npm install sealights-jest-plugin
 ```
 
-## Running Tests
-
-The project supports both TypeScript and JavaScript test execution, and we will demonstrate how to run tests with Sealights for both cases.
-
-- Run TypeScript tests directly (with ts-jest): `npm run test:ts`
-- Run JavaScript tests (compiled): `npm run test:js`
-- Run tests in watch mode: `npm run test:watch`
-
 ## Implementing Sealights Jest Plugin
 
 ### 1. Configure TypeScript
@@ -46,29 +39,30 @@ Ensure your `tsconfig.json` has source map generation enabled:
 {
   "compilerOptions": {
     "sourceMap": true,
-    "sourceRoot": "."
     // ... other options
   }
 }
 ```
+Also make sure you have the `sourceRoot` set to an empty string or another valid value for your use case in your `tsconfig.json` file if you notice wrong source map paths or no coverage reports.
 
 ### 2. Modify Jest Configuration
 
 Update your Jest configuration to use the Sealights plugin. Modify `jest.config.js`:
 
 ```javascript
+/** @type {import('jest').Config} */
 const { configCreator } = require('sealights-jest-plugin');
 
 const config = {
-  preset: 'ts-jest',
-  testEnvironment: 'node',
-  testMatch: ['<rootDir>/test/**/*.test.ts'],
-  verbose: true
+  testEnvironment: "node",
+  testMatch: ["<rootDir>/dist/test/**/*.test.js"],
+  verbose: true,
+  rootDir: ".",
 };
 
-module.exports = configCreator(config);
+module.exports = configCreator(config); 
 ```
-**NOTE:** In our case we modified both `jest.config.js` and `jest.config.js.js` to use the Sealights plugin both when running with `ts-jest` and `jest` respectively.
+**NOTE:** In our case we modified `jest.config.js` to use the Sealights plugin. You will need to modify your configuration according to your needs - the main idea is to wrap the `config` object with the `configCreator` function from Sealights.
 
 ### 3. Running Tests with Sealights
 
@@ -84,14 +78,9 @@ npx slnodejs scan --workspacepath ./dist --scm none
 ```
 3. Execute tests with Sealights parameters:
 
-    For the TypeScript tests:
-    ```bash
-    jest --config jest.config.js --sl-testStage='TypeScript Tests' --sl-tokenfile=sltoken.txt --sl-buildsessionidfile=buildSessionId # or npm run test:sealights:ts
-    ```
-    For the JavaScript tests:
-    ```bash
-    jest --config jest.config.js.js --sl-testStage='JavaScript Tests' --sl-tokenfile=sltoken.txt --sl-buildsessionidfile=buildSessionId # or npm run test:sealights:js
-    ```
+```bash
+jest --config jest.config.js --sl-testStage='JavaScript Tests' # or npm run test:sealights:js
+```
 
 ## Additional Configuration and Documentation
 
