@@ -3,3 +3,4 @@ node_modules/
 dist/
 sltoken.txt
 buildSessionId
+sltmpfile_userconfig.json
