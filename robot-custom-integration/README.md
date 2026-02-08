@@ -1,106 +1,143 @@
-# Using SeaLights Test Optimization with Robot framework
+### SLListener (Robot Framework wrapper) — Usage Guide
 
-This is a demonstration of applying SeaLights with Test Optimization to tests in the Robot framework (Python).
+The `SLListener.py` provides a Robot Framework listener that integrates your Robot test runs with SeaLights. It creates a test session, optionally narrows execution to recommended tests, instruments Selenium for web footprints, and reports results back to SeaLights.
 
->For more information about Robot Framework Interfaces, please refer to the official documentation: [Robot Framework User Guide](https://robotframework.org/robotframework/latest/RobotFrameworkUserGuide.html#listener-interface)
+### What it does
+- **Test session lifecycle**: Opens a SeaLights Test Session on suite start and closes it on suite end.
+- **Test selection**: Fetches recommendations and marks excluded tests as `SKIP` before execution.
+- **Tag-based grouping** (optional): When `use_tags=True`, uses the first tag as the test identifier, allowing multiple Robot tests to be grouped under a single SeaLights test.
+- **Tracing**: Starts an OpenTelemetry span per test and sets baggage with test/session identifiers.
+- **Selenium instrumentation**: Monkey-patches `WebDriver.get/close/quit` to communicate with the SeaLights Browser Agent when present.
+- **Results reporting**: Uploads aggregated test results (name, status, start/end) to SeaLights.
 
-## SeaLights integration
+### Requirements
+- Robot Framework (Listener API v3 compatible).
+- Python 3.x environment with your regular test dependencies.
+- A SeaLights token (`sltoken`) whose JWT payload contains the `x-sl-server` claim.
+- One of the following to identify the build session:
+  - **Build Session ID** (`bsid`), or
+  - **Lab ID** (`labid`) that has an active build session for the specified stage.
+- **Stage name** (`stagename`) such as `CI`, `Nightly`, etc.
+- **Machine DNS** Robot require `machine_dns` environment variable to be set - this is the url to the application under test
 
-The SeaLights integration is implemented in the file `SLListener.py`. It provides an implementation of Robot's
-Listener interface to facilitate calls to SeaLights API at appropriate phases of the test suite's lifecycle:
-- `start_suite` -- here we do two things:
-  - initialize the test session so that all the tests can be identified by SeaLights as being part of the same session 
-  - request the list of tests to be executed from SeaLights and narrow the test suite to only them
-- `end_suite` -- here we do two things: 
-  - we collect and report test results including start and end time to SeaLights
-  - close the test session
-- `start_test` - here we start an OpenTelemetry span with the test name and session id as [baggage](https://opentelemetry.io/docs/reference/specification/baggage/api/).
-   
-   This will increase accuracy for the coverage to test correlation and will lead to more test savings.
-- `end_test` - here we end the span that was opened in the beginning of the test. 
+### Listener arguments (positional) (space are supported in params)
+1) `sltoken` (required)
+2) `bsid` (optional if `labid` is provided)
+3) `stagename` (required)
+4) `labid` (optional if `bsid` is provided)
+5) `use_tags` (optional, default: `False`) - Enable tag-based test identification
 
-## Using the SeaLights Listener 
-* Install the dependencies located in setup.py
+Notes:
+- Provide at least one of `bsid` or `labid`.
+- If both `bsid` and `labid` are provided, the listener resolves the active build session via `labid`.
+- When skipping an optional argument to provide later ones, pass an empty string to preserve positions.
 
+### Quick start
+Use an absolute path to avoid module import collisions. Replace `/path/to/repo` with your local clone path.
 
-* Install active opentelemetry instrumentation libraries
-  `opentelemetry-bootstrap --action=install`
+With `Build Session Id` example:
 
-  This commands inspects the active Python site-packages and figures out which instrumentation packages the user might want to install. By default it prints out a list of the suggested instrumentation packages which can be added to a requirements.txt file. It also supports installing the suggested packages when run with --action=install flag.
+```bash
+export machine_dns="<application-under-test-url>"
+export SL_TOKEN="<your-sealights-token>"
+export BSID="<your-build-session-id>"
+robot --listener "/path/to/repo/robot/SLListener.py:${SL_TOKEN}:${BSID}:CI Tests" /path/to/robot/tests.robot
+```
 
+With `labid` example:
 
-* The listener is taken into use from the command line with the `--listener` option so that the name of the listener is given to it as an argument. Additional command arguments are specified after the listener name (or path) using a colon (`:`) as a separator
-  * Token
-  * buildSessionId
-  * Test Stage name
-  * (Optional) LabId
+```bash
+export machine_dns="<application-under-test-url>"
+export SL_TOKEN="<your-sealights-token>"
+export LAB_ID="<your-lab-id>"
+robot --listener "/path/to/repo/robot/SLListener.py:${SL_TOKEN}::CI Tests:${LAB_ID}" /path/to/robot/tests.robot
+```
 
-* If you have test cases that behave like test steps and use robot's report by tag then please use the "SLTagsListener"
-  `--listener “SLTagsListener.py:<Token>:<buildSessionId>:<Test Stage Name>:<LabId>"`
-  ![statistics-by-tag](statistics-by-tag.png)
-* If you use robot's report by test case then please use the "SLListener"
-  `--listener “SLListener.py:<Token>:<buildSessionId>:<Test Stage Name>:<LabId>"`
+With `use_tags` enabled:
 
-## Running the example with SeaLights
+```bash
+export machine_dns="<application-under-test-url>"
+export SL_TOKEN="<your-sealights-token>"
+export BSID="<your-build-session-id>"
+robot --listener "/path/to/repo/robot/SLListener.py:${SL_TOKEN}:${BSID}:CI Tests::True" /path/to/robot/tests.robot
+```
 
-### Overview
+### Tag-based Test Grouping (`use_tags=True`)
 
-![Overview](diagram.png)
+When `use_tags` is enabled, the listener uses the **first tag** of each test as its identifier instead of the test name. This enables:
 
+1. **Grouping multiple Robot tests under one SeaLights test**: Tests with the same first tag are reported as a single test to SeaLights.
 
-### Steps
+2. **Aggregated status reporting**:
+   - All tests with the same tag skipped → `skipped`
+   - Any test with the same tag failed → `failed`
+   - Otherwise → `passed`
 
-1. Clone Spring petclinic Java Backend Repo
-   ```shell
-   git clone https://github.com/spring-petclinic/spring-petclinic-rest
-   ```
-2. Clone Spring petclinic angular web app
-   ```shell
-   git clone https://github.com/spring-petclinic/spring-petclinic-angular
-   ```
-3. Download and unzip latest Java agent - https://agents.sealights.co/sealights-java/sealights-java-latest.zip
-   ```shell
-    cd spring-petclinic-rest
-    wget -nv https://agents.sealights.co/sealights-java/sealights-java-latest.zip
-    unzip -oq sealights-java-latest.zip
-    download sltoken.txt from sealights dashboard settings-> Agent Tokens
-    ```
-   * Follow the steps to create a session, scan and run unit tests on the java backend [here](https://sealights.atlassian.net/wiki/spaces/SUP/pages/3130949633/Scanning+Builds+and+Capturing+Unit+Tests+using+the+SeaLights+Maven+plugin)
-   * Run the backend application with coloring
-     ```shell
-      java -jar -javaagent:sl-test-listener.jar -Dsl.log.level=debug -Dsl.log.toFile=true  -Dsl.log.toConsole=true -Dsl.tokenFile=sltoken.txt -Dsl.buildSessionIdFile=buildSessionId.txt -Dsl.labId=<integ lab id from sealights -> settings -> integration lab ids> -Dsl.featuresData.codeCoverageManagerVersion=V2 -Dsl.otel.enabled=true target/spring-petclinic-rest-2.6.2.jar
-     ```
-4. Install latest JavaScript Agent
-    ```shell
-    cd spring-petclinic-angular
-    download sltoken.txt from sealights dashboard settings-> Agent Tokens
-    npm install
-    npm install slnodejs
-    npm run build
-    ./node_modules/.bin/slnodejs config --tokenfile sltoken.txt --appname "spring-petclinic-angular" --branch "master" --build "1"
-    npx slnodejs scan --workspacepath ./dist --tokenfile sltoken.txt --buildsessionidfile buildSessionId --labid <integ lab id from sealights -> settings -> integration lab ids> --es6Modules --scm none --enableOpenTelemetry --instrumentForBrowsers --outputpath "sl_web"
-    ./node_modules/.bin/httpster -p 4200 -d sl_web
-    ```
-5. Open up a browser on localhost:4200 (our agent will be downloaded and started)
-6. Create an integration build
-   ```shell
-    curl --location --request POST 'https://<devlab>-gw.dev.sealights.co/sl-api/v1/agent-apis/lab-ids/<integration-lab-id>/integration-build' \
-    --header 'Content-Type: application/json' \
-    --header 'Accept: application/json' \
-    --header 'Authorization: Bearer <agent token>' \
-    --data-raw '{
-      "buildName": "<unique build name>"
-    }'
-   ```
-   You should get a response with a new build session id. Use this build session id to run the tests
-7. To apply the listener to tests use the following command:
-    ```
-    robot --listener "SLListener.py:${SL_TOKEN}:${SL_BUILD_SESSION_ID}:Robot Tests:${SL_LAB_ID}" selenium_tests.robot
-    ```
-    or 
-    ```
-    robot --listener "SLListener.py:`cat sltoken.txt`:`cat buildSessionId.txt`:Robot Tests" selenium_tests.robot
-    ```
+3. **Aggregated timing**: Uses the earliest start time and latest end time across all tests with the same tag.
 
-    The `SLListener`'s constructor requires the SeaLights token and build session id, in the above command it is assumed
-    that these values can be found in files `sltoken.txt` and `buildSessionId.txt`.
+4. **Exclusion by tag**: When SeaLights recommends excluding a test name, all Robot tests with that tag are skipped.
+
+**Example**: If you have three Robot tests:
+- `Login_Chrome` with tag `Login`
+- `Login_Firefox` with tag `Login`
+- `Checkout` with tag `Checkout`
+
+SeaLights will see two tests: `Login` and `Checkout`. If `Login_Chrome` passes but `Login_Firefox` fails, `Login` is reported as `failed`.
+
+**Fallback**: Tests without tags use their test name as the identifier.
+
+### How endpoints are determined
+- The listener decodes the JWT (without signature verification) and reads `x-sl-server`, e.g. `https://your.sl.server/api`.
+- For Test Session APIs it uses the `sl-api` base by converting `/api` → `/sl-api`.
+- When resolving `bsid` from `labid`, it calls `GET /v1/lab-ids/{labId}/build-sessions/active` on the API base with query params `agentId` and `testStage`.
+
+### Test selection behavior
+- On suite start, the listener calls `GET /v1/test-sessions/{id}/exclude-tests`.
+- Test names (or tags when `use_tags=True`) returned from this endpoint are marked as `SKIP` before execution.
+- If a skipped test has a teardown, it is removed to avoid side effects.
+- Console logs include counts and decisions for transparency.
+
+### Selenium instrumentation
+- If `selenium` is installed, the listener applies:
+  - After `WebDriver.get`: injects a `CustomEvent("set:baggage")` with `x-sl-test-name` and `x-sl-test-session-id`.
+  - On `close`/`quit`: attempts `await window.$SealightsAgent.sendAllFootprints()`.
+- Ensure your application pages include the SeaLights Browser Agent so `window.$SealightsAgent` is available to collect web footprints.
+
+### Logging and environment
+- Console log lines are prefixed with `[SeaLights]` for easy filtering.
+- The listener disables default OpenTelemetry exporters by setting:
+  - `OTEL_METRICS_EXPORTER=none`
+  - `OTEL_TRACES_EXPORTER=none`
+
+### Failure and disable behavior
+- Missing `stagename` or missing both `bsid` and `labid` → listener disables itself and logs the reason.
+- `labid` resolution outcomes:
+  - `200` → sets `bsid` and continues.
+  - `404`, `500`, or other errors → listener is disabled with an explanatory message.
+- Session create or results upload failures are logged with HTTP status codes.
+
+### Troubleshooting
+- "Listener disabled: Stage name is required" → Provide `stagename` (3rd argument).
+- "Either 'bsid' or 'labId' must be provided" → Pass at least one; for `labid` only, leave `bsid` empty.
+- "Failed to open Test Session" → Verify token validity, network access, and the `x-sl-server` claim.
+- "No active build session for labId" → Ensure the Lab has an active build session for the given stage.
+- Selenium JS errors → Ensure your app pages load the SeaLights Browser Agent (`window.$SealightsAgent`).
+
+### File locations
+- Listener source: `robot/SLListener.py`
+- Test suite: `robot/tests/test_sl_listener.py`
+- This guide: `robot/SLListener.md`
+
+### Running tests
+
+```bash
+cd robot
+python3 -m pytest tests/test_sl_listener.py -v
+```
+
+The test suite covers:
+- Initialization with various combinations of bsid/labid/stagename
+- Tag-based test identification (`_get_test_identifier`)
+- Excluded tests matching (by name vs by tag)
+- Build results aggregation (with and without tags)
+- API integration with mocked responses
