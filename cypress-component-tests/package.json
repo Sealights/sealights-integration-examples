@@ -1,0 +1,37 @@
+{
+  "name": "cypress-react-e2e-component",
+  "version": "1.0.0",
+  "description": "Simple interactive React app with Cypress 14 E2E + component tests",
+  "main": "index.js",
+  "scripts": {
+    "start": "npx serve sl-dist -l 5173",
+    "dev": "vite",
+    "build": "vite build",
+    "sl:config": "NODE_DEBUG=sl SL_LOG_LEVEL=debug npx slnodejs config --appname cypress-ct-demo --branch master --build 1.0.0",
+    "sl:scan": "NODE_DEBUG=sl SL_LOG_LEVEL=debug npx slnodejs scan --workspacepath dist --scm none --instrumentForBrowsers --outputpath sl-dist",
+    "sl:runner": "NODE_DEBUG=sl SL_LOG_LEVEL=debug CYPRESS_SL_TOKEN=$(cat sltoken.txt) CYPRESS_SL_BUILD_SESSION_ID=$(cat buildSessionId) CYPRESS_SL_TEST_STAGE=e2e-runner CYPRESS_SL_ENABLE_REMOTE_AGENT=true npx sealights-cypress-plugin npx cypress run --spec 'cypress/e2e/sub/*'",
+    "sl:coverage": "NODE_DEBUG=sl SL_LOG_LEVEL=debug npx slnodejs nycReport --testStage ct-spec",
+    "cy:e2e": "cypress run --e2e",
+    "cy:e2e:sl": "NODE_DEBUG=sl SL_LOG_LEVEL=debug CYPRESS_SL_TOKEN=$(cat sltoken.txt) CYPRESS_SL_BUILD_SESSION_ID=$(cat buildSessionId) CYPRESS_SL_TEST_STAGE=e2e CYPRESS_SL_ENABLE_REMOTE_AGENT=true cypress run --e2e",
+    "cy:e2e:sl:spec": "NODE_DEBUG=sl SL_LOG_LEVEL=debug CYPRESS_SL_TOKEN=$(cat sltoken.txt) CYPRESS_SL_BUILD_SESSION_ID=$(cat buildSessionId) CYPRESS_SL_TEST_STAGE=e2e-spec CYPRESS_SL_ENABLE_REMOTE_AGENT=true CYPRESS_SL_SPEC='cypress/e2e/sub/*' cypress run --e2e --spec 'cypress/e2e/sub/*'",
+    "cy:ct": "cypress run --component",
+    "cy:ct:sl": "NODE_DEBUG=sl SL_LOG_LEVEL=debug CYPRESS_SL_TOKEN=$(cat sltoken.txt) CYPRESS_SL_BUILD_SESSION_ID=$(cat buildSessionId) CYPRESS_SL_TEST_STAGE=ct CYPRESS_SL_ENABLE_REMOTE_AGENT=true CYPRESS_SL_SPEC=cypress/component2/**/*.cy.{js,jsx,ts,tsx} cypress run --component",
+    "cy:ct:sl:spec": "NODE_DEBUG=sl SL_LOG_LEVEL=debug CYPRESS_SL_TOKEN=$(cat sltoken.txt) CYPRESS_SL_BUILD_SESSION_ID=$(cat buildSessionId) CYPRESS_SL_TEST_STAGE=ct-spec CYPRESS_SL_ENABLE_REMOTE_AGENT=true CYPRESS_SL_SPEC='cypress/component/sub/*' cypress run --component --spec 'cypress/component/sub/*'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@cypress/code-coverage": "^3.14.7",
+    "@vitejs/plugin-react-swc": "^4.2.3",
+    "cypress": "^14.5.4",
+    "sealights-cypress-plugin": "file:../SL.OnPremise.Plugins.JavaScript/packages/sealights-cypress-plugin/sealights-cypress-plugin-2.0.145.tgz",
+    "sealights-plugins-common": "file:../SL.OnPremise.Plugins.JavaScript/packages/sealights-plugins-common/sealights-plugins-common-2.0.131.tgz",
+    "vite": "^7.3.1",
+    "vite-plugin-istanbul": "^7.2.1"
+  }
+}
