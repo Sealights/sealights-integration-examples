@@ -1,0 +1,8 @@
+node_modules
+sltoken*.txt
+*dist
+.idea
+cypress/screenshots
+buildSessionId
+.nyc_output
+coverage
