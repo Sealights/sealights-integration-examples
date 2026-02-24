@@ -29,8 +29,7 @@
     "@cypress/code-coverage": "^3.14.7",
     "@vitejs/plugin-react-swc": "^4.2.3",
     "cypress": "^14.5.4",
-    "sealights-cypress-plugin": "file:../SL.OnPremise.Plugins.JavaScript/packages/sealights-cypress-plugin/sealights-cypress-plugin-2.0.145.tgz",
-    "sealights-plugins-common": "file:../SL.OnPremise.Plugins.JavaScript/packages/sealights-plugins-common/sealights-plugins-common-2.0.131.tgz",
+    "sealights-cypress-plugin": "2.0.147",
     "vite": "^7.3.1",
     "vite-plugin-istanbul": "^7.2.1"
   }
