@@ -1,11 +1,24 @@
 This project demonstrates usage of both e2e and component tests in Cypress.
 
+# Configuring the project
+This project is already configured to run E2E and component tests with SeaLights. You can configure your project based
+on this.
+
+1. Set up SeaLights project (sltoken.txt, `slnodejs config`, `slnodejs scan` - see package.json for example commands).
+2. Install SeaLights plugin as described in [docs](https://www.npmjs.com/package/sealights-cypress-plugin#installation).
+   1. in `cypress.config.js` modify `setupNodeEvents` in **both** `e2e` and `component` configurations
+   2. modify **both support files** - the one for E2E and the one for component tests
+3. Run the tests with SL plugin env vars set. See commands in `package.json` for reference. They are described later in 
+this file.
+4. For component tests, to get the coverage in SL dashboard, follow the steps described in [this doc](https://sealights.atlassian.net/wiki/spaces/DEV/pages/5134483457/Coverage+of+Cypress+component+tests).
+
 # Runner
 The easiest way to run Cypress E2E tests with SeaLights is to use the runner. This is
 demonstrated with `sl:runner` command in package.json. Runner correctly handles `--spec`
 CLI param passed to Cypress, no need to additionally set `CYPRESS_SL_SPEC` env var.
 
-Currently the runner **does not** support running component tests.
+Currently the runner **does not** support running component tests. You can run E2E tests with runner, and component tests
+with classic installation described above.
 
 # Note on `CYPRESS_SL_SPEC`
 SL Cypress plugin introduces `CYPRESS_SL_SPEC` env var which in component tests **must** be set to the same value as
