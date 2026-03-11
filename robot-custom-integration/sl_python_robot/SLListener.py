@@ -1,8 +1,6 @@
 import functools
 import os
 import uuid
-from collections import Counter
-from itertools import groupby
 
 os.environ["OTEL_METRICS_EXPORTER"] = "none"
 os.environ["OTEL_TRACES_EXPORTER"] = "none"
@@ -29,7 +27,7 @@ TEST_STATUS_MAP = {"FAIL": "failed", "SKIP": "skipped"}
 class SLListener:
     ROBOT_LISTENER_API_VERSION = 3
 
-    def __init__(self, sltoken, bsid=None, stagename=None, labid=None, use_tags=False):
+    def __init__(self, sltoken, bsid=None, stagename=None, labid=None, testprojectid=None):
         self.token = sltoken
         self.base_url = self.extract_sl_endpoint()
         self.bsid = bsid
@@ -41,7 +39,6 @@ class SLListener:
         self.agent_id = str(uuid.uuid4())
         self.enabled = True
         self.disabled_reason = ""
-        self.use_tags = use_tags
 
         # Validate that at least one of bsid or labId is provided
         if not self.bsid and not self.labid:
@@ -54,6 +51,10 @@ class SLListener:
             print(
                 f"{SEALIGHTS_LOG_TAG} Both 'bsId' and 'labId' provided; using 'labId' ({self.labid})."
             )
+
+        self.test_project_id = testprojectid
+        if self.test_project_id:
+            print(f"{SEALIGHTS_LOG_TAG} Using testProjectId: {self.test_project_id}")
 
         if not self.stage_name:
             self.enabled = False
@@ -85,12 +86,12 @@ class SLListener:
         self.end_test_session()
 
     def start_test(self, data, result):
-        test_name = self.get_encoded_test_name(self._get_test_identifier(data))
+        test_name = self.get_encoded_test_name(data.name)
         self.try_instrument_selenium(test_name, self.test_session_id)
         self.start_span(test_name)
 
     def end_test(self, data, result):
-        test_name = self.get_encoded_test_name(self._get_test_identifier(data))
+        test_name = self.get_encoded_test_name(data.name)
         test_span = self.spans.get(test_name)
         if test_span:
             context.detach(test_span["token"])
@@ -107,6 +108,8 @@ class SLListener:
             "testStage": self.stage_name,
             "bsid": self.bsid,
         }
+        if self.test_project_id:
+            initialize_session_request["testProjectId"] = self.test_project_id
         response = requests.post(
             f"{self.base_url}/v1/test-sessions",
             json=initialize_session_request,
@@ -153,6 +156,8 @@ class SLListener:
         url = f"{api_endpoint}/v1/lab-ids/{self.labid}/build-sessions/active"
         print(f"Resolving build session id from labId: {self.labid}")
         params = {"agentId": self.agent_id, "testStage": self.stage_name}
+        if self.test_project_id:
+            params["testProjectId"] = self.test_project_id
         try:
             response = requests.get(url, headers=self.get_header(), params=params, timeout=30)
             if response.status_code == 200:
@@ -188,13 +193,12 @@ class SLListener:
         all_tests = set()
         for test in suite.tests:
             try:
-                test_identifier = self._get_test_identifier(test)
                 print(f"{SEALIGHTS_LOG_TAG} Processing Test Case: {test}")
-                all_tests.add(test_identifier)
-                if test_identifier not in self.excluded_tests:
-                    print(f"{SEALIGHTS_LOG_TAG} Test {test_identifier} is not excluded")
+                all_tests.add(test.name)
+                if test.name not in self.excluded_tests:
+                    print(f"{SEALIGHTS_LOG_TAG} Test {test.name} is not excluded")
                     continue
-                print(f"{SEALIGHTS_LOG_TAG} Marking test {test_identifier} as skipped")
+                print(f"{SEALIGHTS_LOG_TAG} Marking test {test.name} as skipped")
                 if not hasattr(test, "body"):
                     print(
                         f"{SEALIGHTS_LOG_TAG} Test {test.name} has no body, adding Skip keyword manually"
@@ -219,12 +223,6 @@ class SLListener:
 
     def build_test_results(self, result):
         # Collect and report test results to SeaLights including start and end time
-        if self.use_tags:
-            return self._build_test_results_with_tags(result)
-        return self._build_test_results_default(result)
-
-    def _build_test_results_default(self, result):
-        """Build test results without tag grouping (original behavior)."""
         tests = []
         for test in result.tests:
             test_status = TEST_STATUS_MAP.get(test.status, "passed")
@@ -239,35 +237,6 @@ class SLListener:
                 }
             )
         return tests
-
-    def _build_test_results_with_tags(self, result):
-        """Build test results with tag-based grouping and aggregation."""
-        test_results = []
-        sorted_tests = sorted(
-            result.tests, key=lambda test: self._get_test_identifier(test)
-        )
-        results = groupby(sorted_tests, key=lambda test: self._get_test_identifier(test))
-
-        for test_name, tests in results:
-            tests = list(tests)
-            start_times_ms, end_times_ms, test_statuses = self._extract_times_and_statuses(
-                tests
-            )
-            # Aggregate timing: earliest start, latest end
-            start_ms = min(start_times_ms)
-            end_ms = max(end_times_ms)
-            # Aggregate status: all skipped → skipped, any failed → failed, otherwise → passed
-            status_count = Counter(test_statuses)
-            if status_count.get("skipped", 0) == len(tests):
-                test_status = "skipped"
-            elif status_count.get("failed", 0) > 0:
-                test_status = "failed"
-            else:
-                test_status = "passed"
-            test_results.append(
-                {"name": test_name, "status": test_status, "start": start_ms, "end": end_ms}
-            )
-        return test_results
 
     def send_test_results(self, test_results):
         if not test_results:
@@ -309,10 +278,13 @@ class SLListener:
     # --- Generic helpers ---
 
     def get_header(self):
-        return {
+        headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
         }
+        if self.test_project_id:
+            headers["x-sl-testprojectid"] = self.test_project_id
+        return headers
 
     def get_session_url(self):
         return f"{self.base_url}/v1/test-sessions/{self.test_session_id}"
@@ -332,25 +304,6 @@ class SLListener:
 
     def get_encoded_test_name(self, test_name):
         return quote(test_name, safe="")
-
-    def _get_test_identifier(self, test):
-        """Returns the first tag if use_tags is enabled and tags exist, otherwise returns test.name."""
-        if self.use_tags and hasattr(test, 'tags') and len(test.tags) > 0:
-            return test.tags[0]
-        return test.name
-
-    def _extract_times_and_statuses(self, tests):
-        """Extracts timing and status data from a list of tests for aggregation."""
-        data = map(
-            lambda test: (
-                self.get_epoch_timestamp(test.starttime),
-                self.get_epoch_timestamp(test.endtime),
-                TEST_STATUS_MAP.get(test.status, "passed"),
-            ),
-            tests,
-        )
-        start_times_ms, end_times_ms, test_statuses = zip(*data)
-        return start_times_ms, end_times_ms, test_statuses
 
 
 def selenium_get_url(test_name, test_session_id):
