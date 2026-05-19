@@ -1,0 +1,15 @@
+{
+  "name": "sl-behave-playwright-browser-agent",
+  "version": "1.0.0",
+  "description": "SeaLights example: Behave + Playwright test runner with browser-agent coverage for a JS UI.",
+  "private": true,
+  "scripts": {
+    "scan": "./scripts/scan.sh",
+    "serve:web": "npx -y httpster -p 3333 -d sl_web",
+    "serve:backend": "cd backend && npm start",
+    "test": "./scripts/run-tests.sh"
+  },
+  "devDependencies": {
+    "slnodejs": "^6.1.327"
+  }
+}

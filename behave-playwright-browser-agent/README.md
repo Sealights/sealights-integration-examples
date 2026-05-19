@@ -1,0 +1,266 @@
+# Behave + Playwright + SeaLights Browser Agent
+
+Minimal end-to-end demo of the **SeaLights Python agent's `behave` runner** driving
+**Playwright** UI tests against a JS app that is **scanned and instrumented by the
+SeaLights Node.js agent** so coverage is colored per scenario.
+
+```
+   features/*.feature  ->  sl-python behave  ->  Behave runner
+                                                       |
+                                               page.evaluate
+                                                       v
+   +-------------------------+      HTTP /add /subtract       +-------------------------+
+   | Express backend (:8080) | <----------------------------- | calculator app (:3333)  |
+   | logs `baggage:` header  |   carries x-sl-test-name etc.  | served from ./sl_web    |
+   +-------------------------+                                | window.$SealightsAgent  |
+                                                              +-----------+-------------+
+                                                                          |
+                                                                          v
+                                                              SeaLights backend
+                                                              (build mapping +
+                                                               browser footprints)
+```
+
+## What the example demonstrates
+
+1. **Build scan** of a JS UI app with `slnodejs scan --instrumentForBrowsers --enableOpenTelemetry`,
+   producing an instrumented `sl_web/` tree that injects `window.$SealightsAgent`.
+2. **Behave + Playwright** as the test runner, with the SeaLights agent
+   auto-detecting `context.page` (Playwright sync Page) per scenario.
+3. **Browser coverage coloring** per scenario via the agent dispatching
+   `set:context` baggage events into the page (driven by `page.evaluate()`),
+   and flushing footprints with `window.$SealightsAgent.sendAllFootprints()`.
+4. **Backend (Python) coverage** is *not* the goal of this example -- the
+   Python steps are pure UI driving and the agent's Python coverage will be
+   close to empty. The valuable coverage signal here is the **browser-side
+   coverage** of the JS app under test.
+
+## Prerequisites
+
+- Node.js 18+ and `npx`
+- Python 3.9+
+- A SeaLights agent token (put it in `sltoken.txt` next to this README)
+- Pinned versions used in this demo (newer is fine):
+  - `slnodejs >= 6.1.327` (latest OTEL-flavored browser agent)
+  - `sealights-python-agent` from branch `SLDEV-25948` (Playwright auto-detect)
+  - `behave >= 1.2.6`, `playwright >= 1.40`
+
+## One-time setup
+
+### 1. Python environment
+
+Use either a fresh virtualenv for this example **or** any existing one you have
+already activated. macOS does not ship a `python` symlink -- always use
+`python3` to create venvs.
+
+Fresh venv (recommended):
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+```
+
+Or reuse an existing one (skip the line above -- just make sure the
+`(<envname>)` prefix is showing in your shell prompt).
+
+### 2. Install dependencies
+
+```bash
+pip install -r requirements.txt
+# If you are testing the SLDEV-25948 branch of the Python agent from a local
+# checkout instead of pip, replace the line above with:
+#   pip install -e /path/to/SL.OnPremise.Agents.Python
+
+playwright install chromium
+
+npm install
+(cd backend && npm install)
+```
+
+### 3. Drop in your SeaLights token
+
+```bash
+echo "YOUR_TOKEN_HERE" > sltoken.txt
+```
+
+## Run the demo
+
+Open **three terminals** (or use `tmux`):
+
+```bash
+# Terminal 1 -- backend
+./scripts/run-backend.sh
+
+# Terminal 2 -- scan + serve instrumented frontend
+./scripts/scan.sh        # one-time: creates buildSessionId + sl_web/
+./scripts/run-web.sh     # serves sl_web/ on http://localhost:3333
+
+# Terminal 3 -- run tests under the SeaLights Behave runner
+./scripts/run-tests.sh
+```
+
+To watch the browser instead of running headless:
+
+```bash
+HEADLESS=false ./scripts/run-tests.sh
+```
+
+## How the integration works
+
+### Node agent: instrumenting the UI
+
+`scripts/scan.sh` runs two Node-agent commands:
+
+| Step | Command | Purpose |
+|------|---------|---------|
+| 1 | `slnodejs config --tokenfile sltoken.txt --appName ... --branch ... --build ...` | Creates a build session ID, written to `./buildSessionId`. |
+| 2 | `slnodejs scan --workspacepath ./calculator-app --outputpath ./sl_web --scm none --instrumentForBrowsers --enableOpenTelemetry --allowCORS '*'` | Scans the JS, submits the build mapping, and writes an instrumented copy of every file (with the `$SealightsAgent` preamble) to `./sl_web`. |
+
+Serving `sl_web/` (instead of `calculator-app/`) is what gives the running page
+`window.$SealightsAgent`. The `--enableOpenTelemetry` flag turns on baggage
+propagation on `fetch`/`XHR`.
+
+### `--allowCORS '*'` is required for cross-origin baggage
+
+The browser-agent's OTEL fetch interceptor only propagates the `baggage` header
+to URLs that match the page's own origin **by default**. In this demo:
+
+- Page is served on `http://localhost:3333` (instrumented `sl_web/`)
+- Backend API is on `http://localhost:8080` (different origin)
+
+Without `--allowCORS`, every call to `/add` / `/subtract` would arrive at the
+backend with `baggage: <none>`. `--allowCORS '*'` enables propagation to all
+origins; `--allowCORS 'http://localhost:8080'` would also work.
+
+Override via env var if you want to test allowlisting:
+
+```bash
+ALLOW_CORS='http://localhost:8080' ./scripts/scan.sh
+```
+
+### Python agent: driving Behave + the browser agent
+
+`scripts/run-tests.sh` invokes:
+
+```bash
+sl-python behave \
+  --tokenfile sltoken.txt \
+  --buildsessionid "$(cat buildSessionId)" \
+  --labid behave-pw-demo \
+  --teststage "E2E Tests" \
+  features/
+```
+
+The agent's `behave_execution.py` wraps Behave's `run_hook`:
+
+| Behave hook | What the SL agent does |
+|-------------|------------------------|
+| `before_all`  | `SeaLightsAPI.start_execution(...)` then user `before_all` |
+| `before_scenario` | SL backend (TIA / test start) -> **user `before_scenario` creates `context.page` and navigates** -> SL `run_browser_set_test` (`page.evaluate` -> `set:context` baggage) |
+| `after_scenario`  | SL `run_browser_flush` (`page.evaluate` -> `window.$SealightsAgent.sendAllFootprints()`) -> user `after_scenario` (close page) -> SL test end |
+| `after_all`   | user `after_all` -> final browser flush -> `send_all()` -> `end_execution()` |
+
+Auto-detection: anything on `context.page` with a callable `.evaluate` is
+treated as a Playwright page. If you keep your page on a different attribute,
+pass `--browser-page-attr my_attr` to the agent.
+
+### Browser footprints submission (production note)
+
+The `scripts/scan.sh` in this demo runs the scan **without** `--collectorurl`, so
+the instrumented page's browser-agent submits build-mapping/footprints/clock-sync
+calls **directly** to the SeaLights backend (the `x-sl-server` claim baked into
+your token). This is the simplest possible setup, but it depends on that
+SeaLights backend allowing `http://localhost:3333` as a CORS origin.
+
+If you see `CORS policy: No 'Access-Control-Allow-Origin'` errors against the
+SeaLights URL in `logs/browser-console.log`:
+
+- The **tests still pass** (the assertions only check the calculator UI).
+- The **build mapping submission worked** (that runs from Node, server-side,
+  during `scripts/scan.sh`).
+- The **per-scenario browser footprints do NOT reach SeaLights** because the
+  browser-agent's XHR is being blocked by the browser.
+
+The production-ready fix is to run a **SeaLights Collector** on
+`http://localhost:16500` and re-scan with `--collectorurl http://localhost:16500`.
+The Collector accepts the browser's CORS calls locally and forwards everything
+to the SeaLights backend server-to-server (no browser CORS in play). The
+Collector is not bundled with this example; see the SeaLights On-Premise
+Collector docs for how to run one alongside.
+
+### `set:context` payload (the proven contract)
+
+The agent dispatches a CustomEvent into the page on each scenario:
+
+```js
+window.dispatchEvent(new CustomEvent('set:context', {
+  detail: {
+    baggage: {
+      'x-sl-test-session-id': '<executionId>',
+      'x-sl-test-name': '<Feature>:<Scenario>',
+    }
+  }
+}));
+```
+
+The Node browser-agent's `setContextHandler` flattens this into a `set:baggage`
+event internally and tags every coverage hit with that test identifier until
+the next scenario.
+
+## Project layout
+
+```
+behave-playwright-browser-agent/
++-- README.md                  (this file)
++-- backend/                   Express /add /subtract (port 8080)
+|   +-- app.js
+|   +-- package.json
++-- calculator-app/            Source JS UI (the thing being scanned)
+|   +-- index.html
+|   +-- assets/app.js
+|   +-- assets/styles.css
++-- features/                  Behave suite
+|   +-- environment.py         Playwright lifecycle (creates context.page)
+|   +-- calculator.feature
+|   +-- steps/calculator_steps.py
++-- scripts/
+|   +-- scan.sh                slnodejs config + scan (one-time per build)
+|   +-- run-backend.sh         starts Express backend
+|   +-- run-web.sh             serves sl_web/ on :3333
+|   +-- run-tests.sh           sl-python behave features/
++-- package.json               slnodejs devDep + npm scripts
++-- requirements.txt           behave + playwright + sealights-python-agent
++-- .gitignore
+```
+
+After `scripts/scan.sh` runs you will also have:
+
+- `buildSessionId` -- created by `slnodejs config`
+- `sl_web/`        -- instrumented copy of `calculator-app/` served on :3333
+
+## Troubleshooting
+
+| Symptom | Likely cause / fix |
+|---------|-------------------|
+| Backend logs show `baggage: <none>` on every request | The page and backend are on different origins and the scan was run without `--allowCORS`. Re-run `scripts/scan.sh` -- it now passes `--allowCORS '*'` by default. Tighten via `ALLOW_CORS='http://localhost:8080'` if you want explicit allowlisting. |
+| Test failures with `to_have_text` timing out and browser console shows `Request header field <name> is not allowed by Access-Control-Allow-Headers` | The browser-agent's OTEL fetch interceptor adds dynamic headers (`baggage`, `traceparent`, `persist`, etc.) which preflight against the backend. The Express backend in `backend/app.js` reflects requested headers by omitting `allowedHeaders` -- if you replaced this with a hard-coded list, switch back. |
+| Browser console shows `Access to XMLHttpRequest at '<sl-server>/clock/sync' has been blocked by CORS policy` | The browser-agent calls the SeaLights backend (the `x-sl-server` claim in your token) directly from the page. If that backend does not send permissive `Access-Control-Allow-Origin` for `http://localhost:3333`, every browser-agent XHR (clock sync, active-execution check, **and footprints submission**) is blocked. The tests still pass because they don't depend on the browser-agent succeeding -- but browser coverage will NOT reach the dashboard. See "Browser footprints submission" below for the fix (point the browser-agent at a local SeaLights Collector instead of direct-to-backend). |
+| Tests pass but no browser coverage in SeaLights | Most likely causes, in order: (1) the page is being served from `calculator-app/` instead of `sl_web/` -- check `scripts/run-web.sh`; (2) `window.$SealightsAgent` wasn't ready before navigation -- raise `WAIT_FOR_AGENT_MS` for slow CI; (3) browser-agent XHR to the SeaLights backend is being CORS-blocked (see "Browser footprints submission" above and tail `logs/browser-console.log` for `CORS policy: ...` errors). |
+| Behave is not installed error | `pip install -r requirements.txt` inside an activated venv. |
+| `sl-python` not found | The Python agent isn't installed in the active environment. `pip install sealights-python-agent` or `pip install -e /path/to/SL.OnPremise.Agents.Python`. |
+| Browser-side `setBaggage event with missing testName/executionId` warning | You're on a Python agent version older than the `set:context` fix in this branch. Upgrade or apply the patch in `python_agent/test_listener/coloring/playwright_helper.py`. |
+| `npx slnodejs` is stale | `npx clear-npx-cache` then re-run `scripts/scan.sh`. |
+| CORS errors in browser console | Make sure the backend was started (`scripts/run-backend.sh`) -- it allows the `baggage` header out of the box. |
+| Want to see what the browser-agent is doing? | Browser console logs are written to `logs/browser-console.log` (truncated each run). Behave captures stdout/stderr per scenario and only shows it on failure -- that's why we log to a file instead of `print()`. Tail with `tail -f logs/browser-console.log` while tests run. The default filter shows errors/warnings + every structured agent log (lines containing `"level":"`). For a full firehose (including app debug noise) set `LOG_BROWSER_CONSOLE_VERBOSE=true`. Disable entirely with `LOG_BROWSER_CONSOLE=false`. Change the directory with `LOG_DIR=/tmp/sl-logs`. |
+
+## Notes for the SLDEV-25948 branch
+
+The Python agent on `SLDEV-25948` is the first version with Playwright
+auto-detection for the Behave runner. Behavior:
+
+- `--browser` flag was added then removed (`f5e73e3`); detection is now
+  automatic based on `context.page` having a callable `.evaluate`.
+- `--browser-page-attr` lets you change the attribute name (default: `page`).
+- The helper dispatches `set:context` (nested baggage), not `set:baggage`
+  (flat), because the Node browser-agent's `setBaggageHandler` reads flat
+  keys -- `setContextHandler` is what accepts the nested form and flattens it
+  internally.

@@ -1,0 +1,108 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #f5f7fa;
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 48px 16px;
+}
+
+main {
+  background: #fff;
+  padding: 32px;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  width: 100%;
+  max-width: 420px;
+}
+
+h1 {
+  margin: 0 0 4px;
+  color: #1a202c;
+}
+
+.subtitle {
+  color: #718096;
+  margin-top: 0;
+  font-size: 14px;
+}
+
+label {
+  display: block;
+  margin: 16px 0 8px;
+  color: #2d3748;
+  font-weight: 500;
+}
+
+input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  font-size: 16px;
+  margin-top: 4px;
+}
+
+.buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+button {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  background: #4299e1;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #3182ce;
+}
+
+#resetBtn {
+  background: #a0aec0;
+}
+
+#resetBtn:hover {
+  background: #718096;
+}
+
+.output {
+  margin-top: 24px;
+  padding: 16px;
+  background: #edf2f7;
+  border-radius: 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.output .label {
+  color: #4a5568;
+  font-weight: 500;
+}
+
+#result {
+  font-size: 20px;
+  font-weight: 700;
+  color: #2b6cb0;
+}
+
+#error {
+  margin-top: 12px;
+  color: #c53030;
+  font-size: 14px;
+  min-height: 20px;
+}
