@@ -145,10 +145,13 @@ ALLOW_CORS='http://localhost:8080' ./scripts/scan.sh
 sl-python behave \
   --tokenfile sltoken.txt \
   --buildsessionid "$(cat buildSessionId)" \
-  --labid behave-pw-demo \
   --teststage "E2E Tests" \
   features/
 ```
+
+The build session id alone is enough to identify the build/branch/app to the
+agent -- the lab id is optional and intentionally omitted in this demo to keep
+the example minimal.
 
 The agent's `behave_execution.py` wraps Behave's `run_hook`:
 
