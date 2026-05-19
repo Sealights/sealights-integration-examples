@@ -1,0 +1,32 @@
+# SeaLights secrets and per-build artifacts
+sltoken.txt
+buildSessionId
+buildSessionId.*
+sealights-python-agent.log*
+sealights-nodejs-agent.log*
+
+# Generated instrumented output
+sl_web/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+backend/node_modules/
+
+# Behave / Playwright artifacts
+.behave-cache/
+test-results/
+playwright-report/
+.mypy_cache/
+
+# Per-run logs (browser console captures, etc.)
+logs/
+
+# OS metadata
+.DS_Store

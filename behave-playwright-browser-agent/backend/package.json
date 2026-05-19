@@ -1,0 +1,14 @@
+{
+  "name": "behave-pw-demo-backend",
+  "version": "1.0.0",
+  "description": "Tiny Express backend serving /add and /subtract for the SeaLights Behave + Playwright demo.",
+  "private": true,
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SeaLights Behave + Playwright Demo</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Calculator</h1>
+      <p class="subtitle">
+        SeaLights Behave + Playwright + Browser Agent demo
+      </p>
+      <form id="calc-form" autocomplete="off">
+        <label>
+          Number 1
+          <input id="number1" type="text" placeholder="e.g. 5" />
+        </label>
+        <label>
+          Number 2
+          <input id="number2" type="text" placeholder="e.g. 3" />
+        </label>
+        <div class="buttons">
+          <button id="addBtn" type="button">Add</button>
+          <button id="subtractBtn" type="button">Subtract</button>
+          <button id="resetBtn" type="button">Reset</button>
+        </div>
+      </form>
+      <div class="output">
+        <span class="label">Result:</span>
+        <span id="result" data-status="idle"></span>
+      </div>
+      <div id="error" role="alert"></div>
+    </main>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
