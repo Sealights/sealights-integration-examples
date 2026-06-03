@@ -17,11 +17,42 @@ try:
 except ImportError:
     WebDriver = None
 
+try:
+    from playwright.sync_api import Page as PlaywrightPage
+    from playwright.sync_api import BrowserContext as PlaywrightBrowserContext
+except ImportError:
+    PlaywrightPage = None
+    PlaywrightBrowserContext = None
+
 SL_TEST_LISTENER_TRACER = "sl-test-listener"
 tracer = trace.get_tracer(SL_TEST_LISTENER_TRACER)
 
 SEALIGHTS_LOG_TAG = "[SeaLights]"
 TEST_STATUS_MAP = {"FAIL": "failed", "SKIP": "skipped"}
+
+_active_webdrivers = set()
+
+if WebDriver:
+    _original_webdriver_get = WebDriver.get
+
+    @functools.wraps(_original_webdriver_get)
+    def _tracking_get(self, *args, **kwargs):
+        _active_webdrivers.add(self)
+        return _original_webdriver_get(self, *args, **kwargs)
+
+    WebDriver.get = _tracking_get
+
+_active_playwright_pages = set()
+
+if PlaywrightPage:
+    _original_playwright_goto = PlaywrightPage.goto
+
+    @functools.wraps(_original_playwright_goto)
+    def _tracking_goto(self, *args, **kwargs):
+        _active_playwright_pages.add(self)
+        return _original_playwright_goto(self, *args, **kwargs)
+
+    PlaywrightPage.goto = _tracking_goto
 
 
 class SLListener:
@@ -35,6 +66,7 @@ class SLListener:
         self.excluded_tests = set()
         self.test_session_id = None
         self.labid = labid
+        self.test_project_id = testprojectid
         self.spans = {}
         self.agent_id = str(uuid.uuid4())
         self.enabled = True
@@ -52,7 +84,6 @@ class SLListener:
                 f"{SEALIGHTS_LOG_TAG} Both 'bsId' and 'labId' provided; using 'labId' ({self.labid})."
             )
 
-        self.test_project_id = testprojectid
         if self.test_project_id:
             print(f"{SEALIGHTS_LOG_TAG} Using testProjectId: {self.test_project_id}")
 
@@ -88,6 +119,7 @@ class SLListener:
     def start_test(self, data, result):
         test_name = self.get_encoded_test_name(data.name)
         self.try_instrument_selenium(test_name, self.test_session_id)
+        self.try_instrument_playwright(test_name, self.test_session_id)
         self.start_span(test_name)
 
     def end_test(self, data, result):
@@ -111,7 +143,7 @@ class SLListener:
         if self.test_project_id:
             initialize_session_request["testProjectId"] = self.test_project_id
         response = requests.post(
-            f"{self.base_url}/v1/test-sessions",
+            f"{self.base_url}/v1/test-sessions/test-stage",
             json=initialize_session_request,
             headers=self.get_header(),
             timeout=30,
@@ -274,6 +306,15 @@ class SLListener:
             WebDriver.get = selenium_get_url(test_name, test_session_id)(WebDriver.get)
             WebDriver.close = selenium_close_quit(WebDriver.close)
             WebDriver.quit = selenium_close_quit(WebDriver.quit)
+        _dispatch_context_to_active_drivers(test_name, test_session_id)
+
+    def try_instrument_playwright(self, test_name, test_session_id):
+        if PlaywrightPage:
+            PlaywrightPage.goto = playwright_goto(test_name, test_session_id)(PlaywrightPage.goto)
+            PlaywrightPage.close = playwright_close(PlaywrightPage.close)
+        if PlaywrightBrowserContext:
+            PlaywrightBrowserContext.close = playwright_context_close(PlaywrightBrowserContext.close)
+        _dispatch_context_to_active_pages(test_name, test_session_id)
 
     # --- Generic helpers ---
 
@@ -306,6 +347,46 @@ class SLListener:
         return quote(test_name, safe="")
 
 
+def _build_set_context_script(test_name, test_session_id):
+    return (
+        'window.dispatchEvent(new CustomEvent("set:context", '
+        '{detail: {baggage: {"x-sl-test-name": "%s", "x-sl-test-session-id": "%s"}}}));'
+        % (test_name, test_session_id)
+    )
+
+
+def _dispatch_context_to_active_drivers(test_name, test_session_id):
+    """Dispatch set:context on any already-open browser.
+
+    This handles the common case where the browser was opened in Suite Setup
+    (before start_test patches WebDriver.get), so the patched get() never fires.
+    Uses the _active_webdrivers set populated by the module-level tracking wrapper.
+    """
+    if not _active_webdrivers:
+        return
+    script = _build_set_context_script(test_name, test_session_id)
+    for driver in list(_active_webdrivers):
+        try:
+            driver.execute_script(script)
+        except Exception:
+            _active_webdrivers.discard(driver)
+
+
+def _dispatch_context_to_active_pages(test_name, test_session_id):
+    """Dispatch set:context on any already-open Playwright page.
+
+    Mirrors _dispatch_context_to_active_drivers for Playwright.
+    """
+    if not _active_playwright_pages:
+        return
+    script = _build_set_context_script(test_name, test_session_id)
+    for page in list(_active_playwright_pages):
+        try:
+            page.evaluate(script)
+        except Exception:
+            _active_playwright_pages.discard(page)
+
+
 def selenium_get_url(test_name, test_session_id):
     def inner(f):
         @functools.wraps(f)
@@ -313,11 +394,7 @@ def selenium_get_url(test_name, test_session_id):
             response = f(*args, **kwargs)
             try:
                 self = args[0]
-                script = (
-                        'const testStartEvent = new CustomEvent("set:baggage", {detail: { "x-sl-test-name": "%s", "x-sl-test-session-id": "%s" }});window.dispatchEvent(testStartEvent);'
-                        % (test_name, test_session_id)
-                )
-                self.execute_script(script)
+                self.execute_script(_build_set_context_script(test_name, test_session_id))
                 return response
             except Exception:
                 return response
@@ -334,6 +411,63 @@ def selenium_close_quit(f):
             self = args[0]
             script = "await window.$SealightsAgent.sendAllFootprints();"
             self.execute_script(script)
+            _active_webdrivers.discard(self)
+            return f(*args, **kwargs)
+        except Exception:
+            _active_webdrivers.discard(args[0] if args else None)
+            return f(*args, **kwargs)
+
+    return wrapper
+
+
+def playwright_goto(test_name, test_session_id):
+    def inner(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            response = f(*args, **kwargs)
+            try:
+                page = args[0]
+                page.evaluate(_build_set_context_script(test_name, test_session_id))
+                return response
+            except Exception:
+                return response
+
+        return wrapper
+
+    return inner
+
+
+def _flush_playwright_page(page):
+    """Flush SeaLights footprints from a single Playwright page."""
+    try:
+        page.evaluate("window.$SealightsAgent.sendAllFootprints()")
+    except Exception:
+        pass
+
+
+def playwright_close(f):
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        try:
+            page = args[0]
+            _flush_playwright_page(page)
+            _active_playwright_pages.discard(page)
+            return f(*args, **kwargs)
+        except Exception:
+            _active_playwright_pages.discard(args[0] if args else None)
+            return f(*args, **kwargs)
+
+    return wrapper
+
+
+def playwright_context_close(f):
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        try:
+            context = args[0]
+            for page in context.pages:
+                _flush_playwright_page(page)
+                _active_playwright_pages.discard(page)
             return f(*args, **kwargs)
         except Exception:
             return f(*args, **kwargs)
