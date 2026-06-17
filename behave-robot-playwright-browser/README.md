@@ -13,14 +13,16 @@ Node.js agent** so browser coverage is colored per test.
                                                        v
    +-------------------------+      HTTP /add /subtract       +-------------------------+
    | Express backend (:8080) | <----------------------------- | calculator app (:3333)  |
-   | logs `baggage:` header  |   carries x-sl-test-name etc.  | served from ./sl_web    |
-   +-------------------------+                                | window.$SealightsAgent  |
-                                                              +-----------+-------------+
-                                                                          |
-                                                                          v
-                                                              SeaLights backend
-                                                              (build mapping +
-                                                               browser footprints)
+   | run via `slnodejs run`  |   carries x-sl-test-name etc.  | served from ./sl_web    |
+   | reads `baggage:` header |                                | window.$SealightsAgent  |
+   +-----------+-------------+                                +-----------+-------------+
+               |                                                          |
+               | backend footprints                                      | browser footprints
+               v                                                          v
+   +----------------------------------------------------------------------------------+
+   |                                SeaLights backend                                  |
+   |                  (build mapping + backend + browser footprints)                   |
+   +----------------------------------------------------------------------------------+
 ```
 
 ## What the example demonstrates
@@ -32,10 +34,12 @@ Node.js agent** so browser coverage is colored per test.
 3. **Browser coverage coloring** per scenario via the agent dispatching
    `set:context` baggage events into the page (driven by `page.evaluate()`),
    and flushing footprints with `window.$SealightsAgent.sendAllFootprints()`.
-4. **Backend (Python) coverage** is *not* the goal of this example -- the
-   Python steps are pure UI driving and the agent's Python coverage will be
-   close to empty. The valuable coverage signal here is the **browser-side
-   coverage** of the JS app under test.
+4. **Baggage propagation from the FE to the BE server** -- the goal of running
+   the backend under `slnodejs run` (see `scripts/run-backend.sh`) with
+   `SL_useOtelAgent=true` is to demonstrate that the per-test `baggage` header
+   (`x-sl-test-name` / `x-sl-test-session-id`), emitted by the instrumented
+   browser, actually reaches the Express server and is picked up by the SeaLights
+   Node runtime agent. Backend coverage itself is incidental here, not the point.
 5. **Robot Framework as an alternative runner** -- the same app is exercised by a
    Robot suite that drives Playwright through its native Python sync API, with the
    **SeaLights custom Robot listener** (`SLListener.py`) providing the test
@@ -94,8 +98,9 @@ echo "YOUR_TOKEN_HERE" > sltoken.txt
 Open **four terminals** (or use `tmux`):
 
 ```bash
-# Terminal 1 -- backend
-./scripts/run-backend.sh
+# Terminal 1 -- scan + run backend under the SeaLights Node agent
+./scripts/scan-be.sh     # one-time: creates buildSessionId-be (backend build session)
+./scripts/run-backend.sh # starts the backend wrapped in `slnodejs run`
 
 # Terminal 2 -- scan + serve instrumented frontend
 ./scripts/scan.sh        # one-time: creates buildSessionId + sl_web/
@@ -156,6 +161,26 @@ Override via env var if you want to test allowlisting:
 ```bash
 ALLOW_CORS='http://localhost:8080' ./scripts/scan.sh
 ```
+
+### Node agent: ingesting the propagated baggage on the backend
+
+The Express backend is **also** a SeaLights component. Two steps wire it up:
+
+| Step | Command | Purpose |
+|------|---------|---------|
+| 1 | `scripts/scan-be.sh` -> `slnodejs config` + `slnodejs scan --workspacepath ./backend` | Creates a *separate* backend build session (`./buildSessionId-be`) and submits the backend build mapping. |
+| 2 | `scripts/run-backend.sh` -> `slnodejs run --buildsessionidfile ../buildSessionId-be --scandir . -- ./app.js` | Starts `app.js` under the SeaLights Node runtime agent so it collects per-request footprints. |
+
+The point of this step is to prove the **baggage round-trip**: with
+`SL_useOtelAgent=true` exported in `run-backend.sh`, the runtime agent reads the
+incoming `baggage` header (`x-sl-test-name` / `x-sl-test-session-id`) that the
+instrumented browser propagated onto its `/add` / `/subtract` calls, confirming
+the per-test context survives the FE -> BE hop. The backend uses its **own**
+build session (`buildSessionId-be`) so it is tracked as a distinct component from
+the instrumented UI (`buildSessionId`); any footprints it attributes to that
+context are a side effect, not the objective. Because the runtime agent needs
+that session, `scripts/scan-be.sh` must run **before** `run-backend.sh` -- the
+latter needs `./buildSessionId-be` to exist.
 
 ### Python agent: driving Behave + the browser agent
 
@@ -253,8 +278,9 @@ behave-robot-playwright-browser/
 |   +-- requirements.txt       robotframework + playwright + listener deps
 |   +-- README.md              full robot-runner details + standalone run
 +-- scripts/
-|   +-- scan.sh                slnodejs config + scan (one-time per build)
-|   +-- run-backend.sh         starts Express backend
+|   +-- scan.sh                slnodejs config + scan of the UI (one-time per build)
+|   +-- scan-be.sh             slnodejs config + scan of the backend (one-time per build)
+|   +-- run-backend.sh         starts Express backend under `slnodejs run`
 |   +-- run-web.sh             serves sl_web/ on :3333
 |   +-- run-tests.sh           sl-python behave features/
 +-- package.json               slnodejs devDep + npm scripts
@@ -262,10 +288,11 @@ behave-robot-playwright-browser/
 +-- .gitignore
 ```
 
-After `scripts/scan.sh` runs you will also have:
+After `scripts/scan.sh` and `scripts/scan-be.sh` run you will also have:
 
-- `buildSessionId` -- created by `slnodejs config`
-- `sl_web/`        -- instrumented copy of `calculator-app/` served on :3333
+- `buildSessionId`    -- UI build session, created by `slnodejs config` in `scan.sh`
+- `buildSessionId-be` -- backend build session, created by `slnodejs config` in `scan-be.sh`
+- `sl_web/`           -- instrumented copy of `calculator-app/` served on :3333
 
 ## Troubleshooting
 
@@ -278,6 +305,8 @@ After `scripts/scan.sh` runs you will also have:
 | Behave is not installed error | `pip install -r requirements.txt` inside an activated venv. |
 | `sl-python` not found | The Python agent isn't installed in the active environment. `pip install sealights-python-agent` or `pip install -e /path/to/SL.OnPremise.Agents.Python`. |
 | Browser-side `setBaggage event with missing testName/executionId` warning | You're on a Python agent version older than the `set:context` fix in this branch. Upgrade or apply the patch in `python_agent/test_listener/coloring/playwright_helper.py`. |
+| `run-backend.sh` errors that `buildSessionId-be` is missing | The backend runtime agent needs the backend build session first. Run `scripts/scan-be.sh` before `scripts/run-backend.sh`. |
+| Backend started but no backend coverage in SeaLights | Check that `run-backend.sh` is wrapping `./app.js` with `slnodejs run` (not bare `npm start`) and that `SL_useOtelAgent=true` is exported so the agent ingests the incoming `baggage` test context. |
 | `npx slnodejs` is stale | `npx clear-npx-cache` then re-run `scripts/scan.sh`. |
 | CORS errors in browser console | Make sure the backend was started (`scripts/run-backend.sh`) -- it allows the `baggage` header out of the box. |
 | Want to see what the browser-agent is doing? | Browser console logs are written to `logs/browser-console.log` (truncated each run). Behave captures stdout/stderr per scenario and only shows it on failure -- that's why we log to a file instead of `print()`. Tail with `tail -f logs/browser-console.log` while tests run. The default filter shows errors/warnings + every structured agent log (lines containing `"level":"`). For a full firehose (including app debug noise) set `LOG_BROWSER_CONSOLE_VERBOSE=true`. Disable entirely with `LOG_BROWSER_CONSOLE=false`. Change the directory with `LOG_DIR=/tmp/sl-logs`. |

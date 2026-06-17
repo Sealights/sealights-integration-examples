@@ -22,11 +22,12 @@ if [[ ! -f buildSessionId ]]; then
   exit 1
 fi
 
-TEST_STAGE="${TEST_STAGE:-E2E Tests}"
+TEST_STAGE="${TEST_STAGE:-E2E Tests-behave}"
 
 export APP_URL="${APP_URL:-http://localhost:3333}"
 export HEADLESS="${HEADLESS:-true}"
 export LAB_ID="${LAB_ID:-demo.lab.id.20260616}"
+export TEST_PROJECT_ID="${TEST_PROJECT_ID:-demo.test.project.id.20260616}"
 
 echo "==> Running Behave under sl-python (stage=${TEST_STAGE})"
 
@@ -35,4 +36,5 @@ exec sl-python behave \
   --buildsessionid "$(cat buildSessionId)" \
   --teststage "${TEST_STAGE}" \
   --labId "${LAB_ID}" \
+  --testProjectId "${TEST_PROJECT_ID}" \
   features/
