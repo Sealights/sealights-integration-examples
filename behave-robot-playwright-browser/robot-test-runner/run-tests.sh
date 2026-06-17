@@ -14,6 +14,7 @@
 #
 # NOTE on listener arguments: SLListener.py takes them colon-separated as
 #   SLListener.py : <token> : <buildSessionId> : <test stage> : [labId] : [testProjectId]
+#     ***If using a lab id instead of a bsid, leave the <buildSessionId> argument empty.*** 
 # The server URL is derived from the token's JWT (x-sl-server), so there is NO
 # domain argument. (The public docs page still shows an older domain-first form.)
 #
@@ -55,7 +56,8 @@ echo "    app   : ${APP_URL}"
 echo "    stage : ${SL_STAGE}"
 echo "    bsid  : ${SL_BSID}"
 
+# If using lab id, you don't need to pass the bsid. Leave the second argument empty. 
 exec robot \
   --outputdir results \
-  --listener "SLListener.py:${SL_TOKEN}:${SL_BSID}:${SL_STAGE}:${LAB_ID}" \
+  --listener "SLListener.py:${SL_TOKEN}::${SL_STAGE}:${LAB_ID}" \
   calculator.robot
