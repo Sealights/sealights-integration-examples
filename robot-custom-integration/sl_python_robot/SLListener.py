@@ -1,5 +1,7 @@
 import functools
 import os
+import socket
+import sys
 import uuid
 
 os.environ["OTEL_METRICS_EXPORTER"] = "none"
@@ -24,11 +26,31 @@ except ImportError:
     PlaywrightPage = None
     PlaywrightBrowserContext = None
 
+# Bump this string on every change to the listener.
+__version__ = "1.3.0"
+
 SL_TEST_LISTENER_TRACER = "sl-test-listener"
 tracer = trace.get_tracer(SL_TEST_LISTENER_TRACER)
 
 SEALIGHTS_LOG_TAG = "[SeaLights]"
 TEST_STATUS_MAP = {"FAIL": "failed", "SKIP": "skipped"}
+
+# ── Log level control ─────────────────────────────────────────────────────────
+# Control verbosity without changing the robot command line.
+# Set SL_LOG_LEVEL=DEBUG for full API request/response output and span lifecycle.
+# Set SL_LOG_LEVEL=WARNING to suppress normal progress messages.
+# Default: INFO
+_LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
+_EFFECTIVE_LOG_LEVEL = _LOG_LEVELS.get(
+    os.environ.get("SL_LOG_LEVEL", "INFO").upper(), 20
+)
+
+
+def _sl_log(message, level="INFO"):
+    """Print a SeaLights log line if the effective log level permits it."""
+    if _LOG_LEVELS.get(level.upper(), 20) >= _EFFECTIVE_LOG_LEVEL:
+        print(f"{SEALIGHTS_LOG_TAG} [{level}] {message}")
+
 
 _active_webdrivers = set()
 
@@ -58,7 +80,9 @@ if PlaywrightPage:
 class SLListener:
     ROBOT_LISTENER_API_VERSION = 3
 
-    def __init__(self, sltoken, bsid=None, stagename=None, labid=None, testprojectid=None):
+    def __init__(
+        self, sltoken, bsid=None, stagename=None, labid=None, testprojectid=None
+    ):
         self.token = sltoken
         self.base_url = self.extract_sl_endpoint()
         self.bsid = bsid
@@ -75,62 +99,90 @@ class SLListener:
         # Validate that at least one of bsid or labId is provided
         if not self.bsid and not self.labid:
             self.enabled = False
-            self.disabled_reason = (
-                "Either 'bsid' or 'labId' must be provided. SeaLights listener is disabled."
-            )
+            self.disabled_reason = "Either 'bsid' or 'labId' must be provided. SeaLights listener is disabled."
         elif self.bsid and self.labid:
-            # When both provided, labId will be used to resolve the active bsid
-            print(
-                f"{SEALIGHTS_LOG_TAG} Both 'bsId' and 'labId' provided; using 'labId' ({self.labid})."
+            _sl_log(
+                f"Both 'bsId' and 'labId' provided; using the supplied bsId ('{self.bsid}') — labId ignored.",
+                level="WARNING",
             )
 
         if self.test_project_id:
-            print(f"{SEALIGHTS_LOG_TAG} Using testProjectId: {self.test_project_id}")
+            _sl_log(f"Using testProjectId: {self.test_project_id}")
 
         if not self.stage_name:
             self.enabled = False
-            self.disabled_reason = "Stage name is required. SeaLights listener is disabled."
-            return
+            self.disabled_reason = (
+                "Stage name is required. SeaLights listener is disabled."
+            )
+
+        _sl_log(f"── SLListener v{__version__} ──────────────────────────────────")
+        _sl_log(f"  Host      : {socket.gethostname()}")
+        _sl_log(f"  PID       : {os.getpid()}")
+        _sl_log(f"  Python    : {sys.version.split()[0]}")
+        _sl_log(f"  Endpoint  : {self.base_url}")
+        _sl_log(f"  Stage     : {self.stage_name or '(missing — listener disabled)'}")
+        _sl_log(f"  labId     : {self.labid or '(none)'}")
+        _sl_log(f"  bsId      : {self.bsid or '(resolving from labId)'}")
+        _sl_log(f"  agentId   : {self.agent_id}")
+        _sl_log(f"  projId    : {self.test_project_id or '(none)'}")
+        _sl_log(f"  LogLevel  : {os.environ.get('SL_LOG_LEVEL', 'INFO (default)')}")
+        _sl_log("─────────────────────────────────────────────────────────────────")
+        if not self.enabled:
+            _sl_log(f"DISABLED: {self.disabled_reason}", level="WARNING")
 
     def start_suite(self, suite, result):
         if not suite.tests:
+            _sl_log(
+                f"start_suite: '{suite.longname}' — no direct tests, skipping",
+                level="DEBUG",
+            )
             return
-        if self.labid:
+
+        _sl_log(
+            f"start_suite: '{suite.longname}' | {len(suite.tests)} test(s) | source: {suite.source}"
+        )
+
+        if self.labid and not self.bsid:
             self.resolve_bsid_from_labid()
-        print(f"{SEALIGHTS_LOG_TAG} {len(suite.tests)} tests in suite {suite.longname}")
+
         if not self.enabled:
-            print(f"{SEALIGHTS_LOG_TAG} Listener disabled: {self.disabled_reason}")
+            _sl_log(f"Listener disabled: {self.disabled_reason}", level="WARNING")
             return
 
         if not self.test_session_id:
-            # initialize the test session so that all the tests can be identified by SeaLights
+            _sl_log("No active session — opening new one")
             self.create_test_session()
-        # request the list of tests to be executed from SeaLights
+        else:
+            _sl_log(f"Reusing existing session: {self.test_session_id}", level="DEBUG")
+
         self.excluded_tests = set(self.get_excluded_tests())
         self.mark_tests_to_be_skipped(suite)
 
-    def end_suite(self, date, result):
+    def end_suite(self, data, result):
         if not self.test_session_id:
             return
+        _sl_log(f"end_suite: '{result.longname}' | closing session {self.test_session_id}")
         test_results = self.build_test_results(result)
         self.send_test_results(test_results)
         self.end_test_session()
 
     def start_test(self, data, result):
         test_name = self.get_encoded_test_name(data.name)
+        _sl_log(f"→ start_test: '{data.name}' | session: {self.test_session_id}", level="DEBUG")
         self.try_instrument_selenium(test_name, self.test_session_id)
         self.try_instrument_playwright(test_name, self.test_session_id)
         self.start_span(test_name)
 
     def end_test(self, data, result):
         test_name = self.get_encoded_test_name(data.name)
+        _sl_log(f"← end_test:   '{data.name}' | {result.status}", level="DEBUG")
         test_span = self.spans.get(test_name)
         if test_span:
             context.detach(test_span["token"])
             test_span["span"].end()
             self.spans.pop(test_name)
         else:
-            print(f"{SEALIGHTS_LOG_TAG} Test span {test_name} not found")
+            _sl_log(f"Test span not found for '{data.name}'", level="WARNING")
 
     # --- Sealights API helpers ---
 
@@ -142,37 +194,36 @@ class SLListener:
         }
         if self.test_project_id:
             initialize_session_request["testProjectId"] = self.test_project_id
+        _sl_log(f"Creating session with: {initialize_session_request}", level="DEBUG")
         response = requests.post(
             f"{self.base_url}/v1/test-sessions/test-stage",
             json=initialize_session_request,
             headers=self.get_header(),
             timeout=30,
         )
-        print(f"{SEALIGHTS_LOG_TAG} Creating session with: {initialize_session_request}")
         if not response.ok:
-            print(
-                f"{SEALIGHTS_LOG_TAG} Failed to open Test Session (Error {response.status_code}), disabling Sealights Listener"
+            _sl_log(
+                f"Failed to open Test Session (Error {response.status_code}), disabling Sealights Listener",
+                level="ERROR",
             )
         else:
             res = response.json()
             self.test_session_id = res["data"]["testSessionId"]
-            print(
-                f"{SEALIGHTS_LOG_TAG} Test session opened, testSessionId: {self.test_session_id}"
-            )
+            _sl_log(f"Test session opened, testSessionId: {self.test_session_id}")
 
     def get_excluded_tests(self):
         excluded_tests = []
         recommendations = requests.get(
-            f"{self.get_session_url()}/exclude-tests", headers=self.get_header(), timeout=30
+            f"{self.get_session_url()}/exclude-tests",
+            headers=self.get_header(),
+            timeout=30,
         )
-        print(
-            f"{SEALIGHTS_LOG_TAG} Retrieving Recommendations: {'OK' if recommendations.ok else f'Error {recommendations.status_code}'}"
+        _sl_log(
+            f"Retrieving Recommendations: {'OK' if recommendations.ok else f'Error {recommendations.status_code}'}"
         )
         if recommendations.status_code == 200:
             excluded_tests = recommendations.json()["data"]
-        print(
-            f"{SEALIGHTS_LOG_TAG} {len(self.excluded_tests)} Skipped tests: {excluded_tests}"
-        )
+        _sl_log(f"{len(excluded_tests)} Skipped tests: {excluded_tests}")
         return excluded_tests
 
     def resolve_bsid_from_labid(self):
@@ -186,12 +237,14 @@ class SLListener:
         """
         api_endpoint = self.extract_sl_endpoint(replace_api_with_sl_api=False)
         url = f"{api_endpoint}/v1/lab-ids/{self.labid}/build-sessions/active"
-        print(f"Resolving build session id from labId: {self.labid}")
+        _sl_log(f"Resolving build session id from labId: {self.labid}")
         params = {"agentId": self.agent_id, "testStage": self.stage_name}
         if self.test_project_id:
             params["testProjectId"] = self.test_project_id
         try:
-            response = requests.get(url, headers=self.get_header(), params=params, timeout=30)
+            response = requests.get(
+                url, headers=self.get_header(), params=params, timeout=30
+            )
             if response.status_code == 200:
                 data = response.json()
                 self.bsid = data.get("buildSessionId")
@@ -199,24 +252,20 @@ class SLListener:
                     self.disabled_reason = "Lab ID resolved successfully but no buildSessionId in response."
                     self.enabled = False
                     return
-                print(
-                    f"{SEALIGHTS_LOG_TAG} Resolved active build session id from labId: {self.bsid}"
-                )
+                _sl_log(f"Resolved active build session id from labId: {self.bsid}")
                 return
         except requests.RequestException as e:
-            self.disabled_reason = f"Network error while resolving labId {self.labid}: {str(e)}"
+            self.disabled_reason = (
+                f"Network error while resolving labId {self.labid}: {str(e)}"
+            )
+            self.enabled = False
+            return
         if response.status_code == 404:
-            self.disabled_reason = (
-                f"No active build session found for labId '{self.labid}'. Sealights Listener is disabled."
-            )
+            self.disabled_reason = f"No active build session found for labId '{self.labid}'. Sealights Listener is disabled."
         elif response.status_code == 500:
-            self.disabled_reason = (
-                f"{SEALIGHTS_LOG_TAG} Server error while resolving bsid (HTTP 500). Sealights Listener is disabled."
-            )
+            self.disabled_reason = "Server error while resolving bsid (HTTP 500). Sealights Listener is disabled."
         else:
-            self.disabled_reason = (
-                f"{SEALIGHTS_LOG_TAG} Failed to resolve active build session (Error {response.status_code}). Sealights Listener is disabled."
-            )
+            self.disabled_reason = f"Failed to resolve active build session (Error {response.status_code}). Sealights Listener is disabled."
         self.enabled = False
         return
 
@@ -225,32 +274,35 @@ class SLListener:
         all_tests = set()
         for test in suite.tests:
             try:
-                print(f"{SEALIGHTS_LOG_TAG} Processing Test Case: {test}")
+                _sl_log(f"Processing Test Case: {test}", level="DEBUG")
                 all_tests.add(test.name)
                 if test.name not in self.excluded_tests:
-                    print(f"{SEALIGHTS_LOG_TAG} Test {test.name} is not excluded")
+                    _sl_log(f"Test {test.name} is not excluded", level="DEBUG")
                     continue
-                print(f"{SEALIGHTS_LOG_TAG} Marking test {test.name} as skipped")
+                _sl_log(f"Marking test {test.name} as skipped")
                 if not hasattr(test, "body"):
-                    print(
-                        f"{SEALIGHTS_LOG_TAG} Test {test.name} has no body, adding Skip keyword manually"
+                    _sl_log(
+                        f"Test {test.name} has no body, adding Skip keyword manually",
+                        level="WARNING",
                     )
                     test.body = Body()  # noqa
                 test.body.create_keyword(name="SKIP")
                 skip_keyword = test.body.pop()
                 test.body.insert(0, skip_keyword)
                 if test.has_teardown():
-                    print(
-                        f"{SEALIGHTS_LOG_TAG} Test {test.name} has teardown, removing it by setting it to None"
+                    _sl_log(
+                        f"Test {test.name} has teardown, removing it by setting it to None",
+                        level="DEBUG",
                     )
                     test.teardown = None
             except Exception as e:
-                print(
-                    f"{SEALIGHTS_LOG_TAG} Failed to mark test {test.name} as skipped: {e}"
+                _sl_log(
+                    f"Failed to mark test {test.name} as skipped: {e}",
+                    level="ERROR",
                 )
 
-        print(
-            f"{SEALIGHTS_LOG_TAG} Total tests: {len(all_tests)}, Total excluded tests: {len(self.excluded_tests)}"
+        _sl_log(
+            f"Total tests: {len(all_tests)}, Total excluded tests: {len(self.excluded_tests)}"
         )
 
     def build_test_results(self, result):
@@ -258,8 +310,12 @@ class SLListener:
         tests = []
         for test in result.tests:
             test_status = TEST_STATUS_MAP.get(test.status, "passed")
-            start_ms = self.get_epoch_timestamp(result.starttime)
-            end_ms = self.get_epoch_timestamp(result.endtime)
+            start_ms = self.get_epoch_timestamp(test.starttime) if test.starttime else 0
+            end_ms = self.get_epoch_timestamp(test.endtime) if test.endtime else 0
+            _sl_log(
+                f"build_test_results: '{test.name}' | {test_status} | duration: {end_ms - start_ms}ms",
+                level="DEBUG",
+            )
             tests.append(
                 {
                     "name": test.name,
@@ -273,19 +329,21 @@ class SLListener:
     def send_test_results(self, test_results):
         if not test_results:
             return
-        print(
-            f"{SEALIGHTS_LOG_TAG} {len(test_results)} Results to send: {test_results}"
-        )
+        _sl_log(f"{len(test_results)} Results to send: {test_results}", level="DEBUG")
         response = requests.post(
-            self.get_session_url(), json=test_results, headers=self.get_header(), timeout=30
+            self.get_session_url(),
+            json=test_results,
+            headers=self.get_header(),
+            timeout=30,
         )
         if not response.ok:
-            print(
-                f"{SEALIGHTS_LOG_TAG} Failed to upload results (Error {response.status_code})"
+            _sl_log(
+                f"Failed to upload results (Error {response.status_code})",
+                level="ERROR",
             )
 
     def end_test_session(self):
-        print(f"{SEALIGHTS_LOG_TAG} Deleting test session {self.test_session_id}")
+        _sl_log(f"Deleting test session {self.test_session_id}")
         requests.delete(self.get_session_url(), headers=self.get_header(), timeout=30)
         self.test_session_id = ""
 
@@ -310,10 +368,14 @@ class SLListener:
 
     def try_instrument_playwright(self, test_name, test_session_id):
         if PlaywrightPage:
-            PlaywrightPage.goto = playwright_goto(test_name, test_session_id)(PlaywrightPage.goto)
+            PlaywrightPage.goto = playwright_goto(test_name, test_session_id)(
+                PlaywrightPage.goto
+            )
             PlaywrightPage.close = playwright_close(PlaywrightPage.close)
         if PlaywrightBrowserContext:
-            PlaywrightBrowserContext.close = playwright_context_close(PlaywrightBrowserContext.close)
+            PlaywrightBrowserContext.close = playwright_context_close(
+                PlaywrightBrowserContext.close
+            )
         _dispatch_context_to_active_pages(test_name, test_session_id)
 
     # --- Generic helpers ---
@@ -394,7 +456,9 @@ def selenium_get_url(test_name, test_session_id):
             response = f(*args, **kwargs)
             try:
                 self = args[0]
-                self.execute_script(_build_set_context_script(test_name, test_session_id))
+                self.execute_script(
+                    _build_set_context_script(test_name, test_session_id)
+                )
                 return response
             except Exception:
                 return response

@@ -11,7 +11,3 @@ requests
 pyjwt
 robotframework-pabot
 opentelemetry-distro
-
-# Development/Testing dependencies
-pytest
-pytest-mock
