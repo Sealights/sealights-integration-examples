@@ -1,0 +1,8 @@
+robotframework>=6.1
+playwright>=1.40
+
+# Dependencies of the SeaLights listener (SLListener.py).
+# These are the listener's only hard imports; selenium is optional and not used here.
+requests
+pyjwt
+opentelemetry-api

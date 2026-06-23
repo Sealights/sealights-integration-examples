@@ -8,6 +8,8 @@ The module is imported as ``_sl_listener`` (registered by conftest.py)
 to avoid collision with the ``robot`` package from robotframework.
 """
 
+import re
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import _sl_listener
@@ -38,6 +40,12 @@ class TestInit:
     def test_test_project_id_defaults_to_none(self):
         listener = _make_listener()
         assert listener.test_project_id is None
+
+    def test_warns_when_both_bsid_and_labid_supplied(self, capsys):
+        _make_listener(bsid="bsid-1", labid="lab-1")
+        out = capsys.readouterr().out
+        assert "[WARNING]" in out
+        assert "labId ignored" in out
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +280,113 @@ class TestPlaywrightContextClose:
 
 
 # ---------------------------------------------------------------------------
+# Version constant
+# ---------------------------------------------------------------------------
+
+def test_version_defined():
+    assert hasattr(_sl_listener, "__version__")
+    assert re.match(r"^\d+\.\d+\.\d+$", _sl_listener.__version__)
+
+
+# ---------------------------------------------------------------------------
+# _sl_log() — log level filtering
+# ---------------------------------------------------------------------------
+
+class TestSlLog:
+    def test_prints_at_threshold(self, capsys):
+        with patch.object(_sl_listener, "_EFFECTIVE_LOG_LEVEL", 20):
+            _sl_listener._sl_log("hello", level="INFO")
+        assert "[INFO] hello" in capsys.readouterr().out
+
+    def test_suppresses_below_threshold(self, capsys):
+        with patch.object(_sl_listener, "_EFFECTIVE_LOG_LEVEL", 30):
+            _sl_listener._sl_log("debug msg", level="DEBUG")
+        assert capsys.readouterr().out == ""
+
+    def test_passes_above_threshold(self, capsys):
+        with patch.object(_sl_listener, "_EFFECTIVE_LOG_LEVEL", 20):
+            _sl_listener._sl_log("warn msg", level="WARNING")
+        assert "[WARNING] warn msg" in capsys.readouterr().out
+
+    def test_includes_sealights_tag(self, capsys):
+        with patch.object(_sl_listener, "_EFFECTIVE_LOG_LEVEL", 20):
+            _sl_listener._sl_log("check tag")
+        assert _sl_listener.SEALIGHTS_LOG_TAG in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# start_suite — resolve_bsid_from_labid guard
+# ---------------------------------------------------------------------------
+
+class TestStartSuiteResolveBsidGuard:
+    def test_skips_resolve_when_bsid_already_set(self):
+        """resolve_bsid_from_labid must not be called if bsid is already known."""
+        listener = _make_listener(bsid="existing-bsid", labid="lab-1")
+
+        suite = MagicMock()
+        suite.tests = [MagicMock()]
+        suite.longname = "Suite"
+        suite.source = "/path/to/suite.robot"
+
+        with patch.object(listener, "resolve_bsid_from_labid") as mock_resolve, \
+             patch.object(listener, "create_test_session"), \
+             patch.object(listener, "get_excluded_tests", return_value=[]), \
+             patch.object(listener, "mark_tests_to_be_skipped"):
+            listener.start_suite(suite, MagicMock())
+
+        mock_resolve.assert_not_called()
+
+    def test_calls_resolve_when_bsid_unset(self):
+        """resolve_bsid_from_labid must be called exactly once when bsid is None."""
+        listener = _make_listener(labid="lab-1", bsid=None)
+
+        suite = MagicMock()
+        suite.tests = [MagicMock()]
+        suite.longname = "Suite"
+        suite.source = "/path/to/suite.robot"
+
+        with patch.object(listener, "resolve_bsid_from_labid") as mock_resolve, \
+             patch.object(listener, "create_test_session"), \
+             patch.object(listener, "get_excluded_tests", return_value=[]), \
+             patch.object(listener, "mark_tests_to_be_skipped"):
+            listener.start_suite(suite, MagicMock())
+
+        mock_resolve.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# start_suite — TIA filtering runs on every suite, not just the first
+# ---------------------------------------------------------------------------
+
+class TestStartSuiteMultiSuiteTia:
+    def _make_suite(self):
+        suite = MagicMock()
+        suite.tests = [MagicMock()]
+        suite.longname = "Suite"
+        suite.source = "/path/to/suite.robot"
+        return suite
+
+    def test_tia_filtering_runs_on_every_suite(self):
+        """mark_tests_to_be_skipped must be called for every suite, not just the first."""
+        listener = _make_listener(bsid="bsid-1")
+
+        with patch.object(listener, "create_test_session") as mock_create, \
+             patch.object(listener, "get_excluded_tests", return_value=[]) as mock_get, \
+             patch.object(listener, "mark_tests_to_be_skipped") as mock_mark:
+
+            # First suite — creates the session
+            listener.start_suite(self._make_suite(), MagicMock())
+            # Simulate session being set (create_test_session is mocked)
+            listener.test_session_id = "sess-1"
+            # Second suite — reuses the session
+            listener.start_suite(self._make_suite(), MagicMock())
+
+        assert mock_create.call_count == 1
+        assert mock_get.call_count == 2
+        assert mock_mark.call_count == 2
+
+
+# ---------------------------------------------------------------------------
 # Playwright instrumentation — try_instrument_playwright()
 # ---------------------------------------------------------------------------
 
@@ -298,3 +413,68 @@ class TestTryInstrumentPlaywright:
              patch.object(_sl_listener, "PlaywrightBrowserContext", None):
             listener = _make_listener()
             listener.try_instrument_playwright("test1", "sess-1")
+
+
+# ---------------------------------------------------------------------------
+# build_test_results() — per-test timestamps (SLDEV-28046)
+# ---------------------------------------------------------------------------
+
+class TestBuildTestResults:
+    def _make_test(self, name, status, starttime, endtime):
+        return SimpleNamespace(name=name, status=status, starttime=starttime, endtime=endtime)
+
+    def _make_suite_result(self, tests, suite_starttime, suite_endtime):
+        return SimpleNamespace(tests=tests, starttime=suite_starttime, endtime=suite_endtime)
+
+    def test_uses_per_test_timestamps_not_suite(self):
+        """Each result entry must carry the individual test's start/end, not the suite's."""
+        listener = _make_listener()
+        t1 = self._make_test("Test A", "PASS", "20240101 00:00:01.000", "20240101 00:00:02.000")
+        t2 = self._make_test("Test B", "PASS", "20240101 00:00:03.000", "20240101 00:00:05.000")
+        suite_result = self._make_suite_result(
+            [t1, t2],
+            suite_starttime="20240101 00:00:00.000",
+            suite_endtime="20240101 00:01:00.000",
+        )
+
+        results = listener.build_test_results(suite_result)
+
+        assert results[0] == {
+            "name": "Test A",
+            "status": "passed",
+            "start": listener.get_epoch_timestamp(t1.starttime),
+            "end": listener.get_epoch_timestamp(t1.endtime),
+        }
+        assert results[1] == {
+            "name": "Test B",
+            "status": "passed",
+            "start": listener.get_epoch_timestamp(t2.starttime),
+            "end": listener.get_epoch_timestamp(t2.endtime),
+        }
+
+    def test_different_tests_get_different_timestamps(self):
+        """Two tests with different run times must produce different start/end values."""
+        listener = _make_listener()
+        t1 = self._make_test("Slow Test", "PASS", "20240101 00:00:00.000", "20240101 00:00:30.000")
+        t2 = self._make_test("Fast Test", "PASS", "20240101 00:00:31.000", "20240101 00:00:32.000")
+        suite_result = self._make_suite_result([t1, t2], "20240101 00:00:00.000", "20240101 00:00:32.000")
+
+        results = listener.build_test_results(suite_result)
+
+        assert results[0]["start"] != results[1]["start"]
+        assert results[0]["end"] != results[1]["end"]
+
+    def test_none_timestamps_for_skipped_test(self):
+        """Tests with None starttime/endtime (e.g. skipped before execution) must not crash."""
+        listener = _make_listener()
+        t = self._make_test("Skipped Test", "SKIP", None, None)
+        suite_result = self._make_suite_result([t], "20240101 00:00:00.000", "20240101 00:00:01.000")
+
+        results = listener.build_test_results(suite_result)
+
+        assert results[0] == {
+            "name": "Skipped Test",
+            "status": "skipped",
+            "start": 0,
+            "end": 0,
+        }

@@ -101,8 +101,9 @@ class SLListener:
             self.enabled = False
             self.disabled_reason = "Either 'bsid' or 'labId' must be provided. SeaLights listener is disabled."
         elif self.bsid and self.labid:
+            # When both provided, labId will be used to resolve the active bsid
             _sl_log(
-                f"Both 'bsId' and 'labId' provided; using the supplied bsId ('{self.bsid}') — labId ignored.",
+                f"Both 'bsId' and 'labId' provided; using 'labId' ({self.labid}).",
                 level="WARNING",
             )
 
@@ -120,13 +121,13 @@ class SLListener:
         _sl_log(f"  PID       : {os.getpid()}")
         _sl_log(f"  Python    : {sys.version.split()[0]}")
         _sl_log(f"  Endpoint  : {self.base_url}")
-        _sl_log(f"  Stage     : {self.stage_name or '(missing — listener disabled)'}")
+        _sl_log(f"  Stage     : {self.stage_name}")
         _sl_log(f"  labId     : {self.labid or '(none)'}")
         _sl_log(f"  bsId      : {self.bsid or '(resolving from labId)'}")
         _sl_log(f"  agentId   : {self.agent_id}")
         _sl_log(f"  projId    : {self.test_project_id or '(none)'}")
         _sl_log(f"  LogLevel  : {os.environ.get('SL_LOG_LEVEL', 'INFO (default)')}")
-        _sl_log("─────────────────────────────────────────────────────────────────")
+        _sl_log(f"─────────────────────────────────────────────────────────────────")
         if not self.enabled:
             _sl_log(f"DISABLED: {self.disabled_reason}", level="WARNING")
 
@@ -150,13 +151,12 @@ class SLListener:
             return
 
         if not self.test_session_id:
-            _sl_log("No active session — opening new one")
+            _sl_log(f"No active session — opening new one")
             self.create_test_session()
+            self.excluded_tests = set(self.get_excluded_tests())
+            self.mark_tests_to_be_skipped(suite)
         else:
             _sl_log(f"Reusing existing session: {self.test_session_id}", level="DEBUG")
-
-        self.excluded_tests = set(self.get_excluded_tests())
-        self.mark_tests_to_be_skipped(suite)
 
     def end_suite(self, data, result):
         if not self.test_session_id:
@@ -168,14 +168,14 @@ class SLListener:
 
     def start_test(self, data, result):
         test_name = self.get_encoded_test_name(data.name)
-        _sl_log(f"→ start_test: '{data.name}' | session: {self.test_session_id}", level="DEBUG")
+        _sl_log(f"→ start_test: '{data.name}' | session: {self.test_session_id}")
         self.try_instrument_selenium(test_name, self.test_session_id)
         self.try_instrument_playwright(test_name, self.test_session_id)
         self.start_span(test_name)
 
     def end_test(self, data, result):
         test_name = self.get_encoded_test_name(data.name)
-        _sl_log(f"← end_test:   '{data.name}' | {result.status}", level="DEBUG")
+        _sl_log(f"← end_test:   '{data.name}' | {result.status}")
         test_span = self.spans.get(test_name)
         if test_span:
             context.detach(test_span["token"])
@@ -194,13 +194,13 @@ class SLListener:
         }
         if self.test_project_id:
             initialize_session_request["testProjectId"] = self.test_project_id
-        _sl_log(f"Creating session with: {initialize_session_request}", level="DEBUG")
         response = requests.post(
             f"{self.base_url}/v1/test-sessions/test-stage",
             json=initialize_session_request,
             headers=self.get_header(),
             timeout=30,
         )
+        _sl_log(f"Creating session with: {initialize_session_request}", level="DEBUG")
         if not response.ok:
             _sl_log(
                 f"Failed to open Test Session (Error {response.status_code}), disabling Sealights Listener",
@@ -223,7 +223,7 @@ class SLListener:
         )
         if recommendations.status_code == 200:
             excluded_tests = recommendations.json()["data"]
-        _sl_log(f"{len(excluded_tests)} Skipped tests: {excluded_tests}")
+        _sl_log(f"{len(self.excluded_tests)} Skipped tests: {excluded_tests}")
         return excluded_tests
 
     def resolve_bsid_from_labid(self):
@@ -258,14 +258,12 @@ class SLListener:
             self.disabled_reason = (
                 f"Network error while resolving labId {self.labid}: {str(e)}"
             )
-            self.enabled = False
-            return
         if response.status_code == 404:
             self.disabled_reason = f"No active build session found for labId '{self.labid}'. Sealights Listener is disabled."
         elif response.status_code == 500:
-            self.disabled_reason = "Server error while resolving bsid (HTTP 500). Sealights Listener is disabled."
+            self.disabled_reason = f"{SEALIGHTS_LOG_TAG} Server error while resolving bsid (HTTP 500). Sealights Listener is disabled."
         else:
-            self.disabled_reason = f"Failed to resolve active build session (Error {response.status_code}). Sealights Listener is disabled."
+            self.disabled_reason = f"{SEALIGHTS_LOG_TAG} Failed to resolve active build session (Error {response.status_code}). Sealights Listener is disabled."
         self.enabled = False
         return
 
