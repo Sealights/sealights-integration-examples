@@ -1,7 +1,9 @@
 import functools
+import math
 import os
 import socket
 import sys
+import time
 import uuid
 
 os.environ["OTEL_METRICS_EXPORTER"] = "none"
@@ -27,7 +29,7 @@ except ImportError:
     PlaywrightBrowserContext = None
 
 # Bump this string on every change to the listener.
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 SL_TEST_LISTENER_TRACER = "sl-test-listener"
 tracer = trace.get_tracer(SL_TEST_LISTENER_TRACER)
@@ -88,6 +90,8 @@ class SLListener:
         self.bsid = bsid
         self.stage_name = stagename
         self.excluded_tests = set()
+        self.tia_resolved = False
+        self.tia_attempted = False
         self.test_session_id = None
         self.labid = labid
         self.test_project_id = testprojectid
@@ -155,20 +159,30 @@ class SLListener:
         else:
             _sl_log(f"Reusing existing session: {self.test_session_id}", level="DEBUG")
 
-        self.excluded_tests = set(self.get_excluded_tests())
+        if not self.tia_resolved:
+            names, terminal = self.get_excluded_tests(poll=not self.tia_attempted)
+            self.tia_attempted = True
+            if terminal:
+                self.excluded_tests = set(names)
+                self.tia_resolved = True
         self.mark_tests_to_be_skipped(suite)
 
     def end_suite(self, data, result):
         if not self.test_session_id:
             return
-        _sl_log(f"end_suite: '{result.longname}' | closing session {self.test_session_id}")
+        _sl_log(
+            f"end_suite: '{result.longname}' | closing session {self.test_session_id}"
+        )
         test_results = self.build_test_results(result)
         self.send_test_results(test_results)
         self.end_test_session()
 
     def start_test(self, data, result):
         test_name = self.get_encoded_test_name(data.name)
-        _sl_log(f"→ start_test: '{data.name}' | session: {self.test_session_id}", level="DEBUG")
+        _sl_log(
+            f"→ start_test: '{data.name}' | session: {self.test_session_id}",
+            level="DEBUG",
+        )
         self.try_instrument_selenium(test_name, self.test_session_id)
         self.try_instrument_playwright(test_name, self.test_session_id)
         self.start_span(test_name)
@@ -211,20 +225,113 @@ class SLListener:
             self.test_session_id = res["data"]["testSessionId"]
             _sl_log(f"Test session opened, testSessionId: {self.test_session_id}")
 
-    def get_excluded_tests(self):
-        excluded_tests = []
-        recommendations = requests.get(
-            f"{self.get_session_url()}/exclude-tests",
-            headers=self.get_header(),
-            timeout=30,
-        )
-        _sl_log(
-            f"Retrieving Recommendations: {'OK' if recommendations.ok else f'Error {recommendations.status_code}'}"
-        )
-        if recommendations.status_code == 200:
-            excluded_tests = recommendations.json()["data"]
-        _sl_log(f"{len(excluded_tests)} Skipped tests: {excluded_tests}")
-        return excluded_tests
+    def get_exclude_tests_url(self):
+        return f"{self.base_url}/v2/test-sessions/{self.test_session_id}/exclude-tests"
+
+    def _fetch_exclusions_once(self):
+        """Single GET against the v2 exclude-tests endpoint.
+
+        Returns (names, terminal, retryable). `retryable` is True only for a
+        200 response with status "notReady" — every other failure (transport
+        error, non-200, unparsable/non-dict body) is terminal-with-no-names
+        and non-retryable so the poll loop can break immediately (fail-open).
+        """
+        try:
+            response = requests.get(
+                self.get_exclude_tests_url(),
+                headers=self.get_header(),
+                timeout=30,
+            )
+        except requests.RequestException as e:
+            _sl_log(f"TIA: request failed — {e}", level="WARNING")
+            return [], False, False
+
+        if response.status_code != 200:
+            _sl_log(f"TIA: unexpected status {response.status_code}", level="WARNING")
+            return [], False, False
+
+        try:
+            body = response.json()
+        except ValueError as e:
+            _sl_log(f"TIA: failed to parse response — {e}", level="WARNING")
+            return [], False, False
+
+        if not isinstance(body, dict):
+            _sl_log("TIA: response body is not an object", level="WARNING")
+            return [], False, False
+
+        payload = body["data"] if "data" in body else body
+        metadata = payload.get("metadata") or {}
+        enabled = metadata.get("testSelectionEnabled")
+        status = metadata.get("status")
+
+        if enabled is True and status == "ready":
+            names = [
+                t["testName"]
+                for t in (payload.get("excludedTests") or [])
+                if isinstance(t, dict) and t.get("testName")
+            ]
+            _sl_log(f"TIA: enabled={enabled} status={status} → {len(names)} excluded")
+            return names, True, False
+
+        if enabled is True and status == "notReady":
+            _sl_log(f"TIA: enabled={enabled} status={status} → 0 excluded")
+            return [], False, True
+
+        _sl_log(f"TIA: enabled={enabled} status={status} → 0 excluded")
+        return [], True, False
+
+    def get_excluded_tests(self, poll=True):
+        if not self.test_session_id:
+            return [], False
+
+        timeout = self._read_positive_env("SL_TIA_POLLING_TIMEOUT_SEC", 60)
+        interval = self._read_positive_env("SL_TIA_POLLING_INTERVAL_SEC", 5)
+
+        if not poll or timeout == 0 or interval == 0:
+            names, terminal, _retryable = self._fetch_exclusions_once()
+            return names, terminal
+
+        deadline = time.monotonic() + timeout
+        names, terminal, retryable = self._fetch_exclusions_once()
+        retry_count = 0
+        while retryable and not terminal and time.monotonic() < deadline:
+            sleep_for = max(0, min(interval, deadline - time.monotonic()))
+            if sleep_for == 0:
+                break
+            retry_count += 1
+            _sl_log(
+                f"TIA notReady — retry {retry_count} in {sleep_for}s", level="DEBUG"
+            )
+            time.sleep(sleep_for)
+            names, terminal, retryable = self._fetch_exclusions_once()
+
+        if retryable and not terminal:
+            _sl_log(
+                "TIA: polling deadline reached while still notReady", level="WARNING"
+            )
+
+        return names, terminal
+
+    def _read_positive_env(self, name, default):
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            _sl_log(
+                f"Invalid value for {name}={raw!r}; using default {default}",
+                level="WARNING",
+            )
+            return default
+        if not math.isfinite(value) or value < 0:
+            _sl_log(
+                f"Invalid value for {name}={raw!r}; using default {default}",
+                level="WARNING",
+            )
+            return default
+        return value
 
     def resolve_bsid_from_labid(self):
         """

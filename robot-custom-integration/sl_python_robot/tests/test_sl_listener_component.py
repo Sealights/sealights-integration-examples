@@ -9,10 +9,13 @@ and asserts on the actual HTTP traffic.
 import json
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 from urllib.parse import parse_qs, urlparse
 
 import jwt as pyjwt
 import pytest
+import requests
 
 
 # ---------------------------------------------------------------------------
@@ -23,6 +26,9 @@ class _RecordingHandler(BaseHTTPRequestHandler):
     """Records all incoming requests and returns canned SeaLights responses."""
 
     requests_log: list = []
+    # exclude-tests v2 lookup: respond notReady this many times before ready.
+    exclude_tests_not_ready_remaining: int = 0
+    exclude_tests_names: list = []
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -44,9 +50,37 @@ class _RecordingHandler(BaseHTTPRequestHandler):
         if "build-sessions/active" in self.path:
             self._respond(200, {"buildSessionId": "bsid-resolved-component"})
         elif "exclude-tests" in self.path:
-            self._respond(200, {"data": []})
+            if self.__class__.exclude_tests_not_ready_remaining > 0:
+                self.__class__.exclude_tests_not_ready_remaining -= 1
+                self._respond(
+                    200,
+                    {
+                        "data": {
+                            "metadata": {
+                                "testSelectionEnabled": True,
+                                "status": "notReady",
+                            },
+                            "excludedTests": [],
+                        }
+                    },
+                )
+            else:
+                self._respond(
+                    200,
+                    {
+                        "data": {
+                            "metadata": {
+                                "testSelectionEnabled": True,
+                                "status": "ready",
+                            },
+                            "excludedTests": self.__class__.exclude_tests_names,
+                        }
+                    },
+                )
         else:
-            self._respond(200, {})
+            # Loud failure — an unrouted GET must never masquerade as "no
+            # exclusions" (200 {}), which would mask a future routing typo.
+            self._respond(404, {"error": f"unrouted path: {self.path}"})
 
     def do_DELETE(self):
         self._record("DELETE")
@@ -84,6 +118,8 @@ class _RecordingHandler(BaseHTTPRequestHandler):
 def mock_server():
     """Start a mock HTTP server on a random port; tear down after test."""
     _RecordingHandler.requests_log = []
+    _RecordingHandler.exclude_tests_not_ready_remaining = 0
+    _RecordingHandler.exclude_tests_names = []
     server = HTTPServer(("127.0.0.1", 0), _RecordingHandler)
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -212,3 +248,71 @@ class TestResolveBsidQueryParam:
         resolve_calls = [r for r in logs if "build-sessions/active" in r["path"]]
         assert len(resolve_calls) == 1
         assert "testProjectId" not in resolve_calls[0]["query"]
+
+
+# ---------------------------------------------------------------------------
+# get_excluded_tests() over real HTTP — v2 exclude-tests endpoint
+# ---------------------------------------------------------------------------
+
+def _fake_robot_test(name):
+    return SimpleNamespace(name=name, body=MagicMock(), has_teardown=lambda: False)
+
+
+class TestExcludeTestsV2:
+    def test_ready_marks_matching_test_skip_and_leaves_others(self, mock_server):
+        """AC13: a ready v2 response SKIP-marks the matching test only, and
+        the recorded request path hits the v2 exclude-tests endpoint."""
+        server, port = mock_server
+        _RecordingHandler.exclude_tests_names = [{"testName": "Match Test"}]
+        listener = _make_listener(port, bsid="bsid-1")
+        listener.create_test_session()
+
+        names, terminal = listener.get_excluded_tests()
+
+        assert (names, terminal) == (["Match Test"], True)
+
+        listener.excluded_tests = set(names)
+        match_test = _fake_robot_test("Match Test")
+        other_test = _fake_robot_test("Other Test")
+        suite = SimpleNamespace(tests=[match_test, other_test])
+        listener.mark_tests_to_be_skipped(suite)
+
+        match_test.body.create_keyword.assert_called_once_with(name="SKIP")
+        other_test.body.create_keyword.assert_not_called()
+
+        logs = _get_logged_requests(mock_server)
+        exclude_calls = [
+            r for r in logs if r["method"] == "GET" and "exclude-tests" in r["path"]
+        ]
+        assert len(exclude_calls) == 1
+        assert "/v2/test-sessions/" in exclude_calls[0]["path"]
+        assert exclude_calls[0]["path"].endswith("/exclude-tests")
+
+    def test_not_ready_then_ready_over_real_http(self, mock_server, monkeypatch):
+        """The poll loop retries a real notReady response and recovers to ready."""
+        server, port = mock_server
+        monkeypatch.setenv("SL_TIA_POLLING_TIMEOUT_SEC", "5")
+        monkeypatch.setenv("SL_TIA_POLLING_INTERVAL_SEC", "0.05")
+        _RecordingHandler.exclude_tests_not_ready_remaining = 2
+        _RecordingHandler.exclude_tests_names = [{"testName": "Recovered Test"}]
+        listener = _make_listener(port, bsid="bsid-1")
+        listener.create_test_session()
+
+        names, terminal = listener.get_excluded_tests()
+
+        assert (names, terminal) == (["Recovered Test"], True)
+        logs = _get_logged_requests(mock_server)
+        exclude_calls = [
+            r for r in logs if r["method"] == "GET" and "exclude-tests" in r["path"]
+        ]
+        assert len(exclude_calls) == 3
+
+    def test_unrouted_get_path_fails_loudly(self, mock_server):
+        """AC13b: an unrouted GET must not silently look like 'no exclusions'."""
+        server, port = mock_server
+
+        response = requests.get(
+            f"http://127.0.0.1:{port}/totally/unrouted/path", timeout=5
+        )
+
+        assert response.status_code == 404
