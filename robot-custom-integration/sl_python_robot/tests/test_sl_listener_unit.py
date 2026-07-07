@@ -12,6 +12,8 @@ import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import requests
+
 import _sl_listener
 
 SLListener = _sl_listener.SLListener
@@ -164,6 +166,314 @@ class TestResolveBsidFromLabid:
 
 
 # ---------------------------------------------------------------------------
+# get_excluded_tests() / _fetch_exclusions_once() — v2 exclude-tests lookup
+# ---------------------------------------------------------------------------
+
+class _FakeClock:
+    """Controllable monotonic clock: time.sleep() advances it, no real delay."""
+
+    def __init__(self, start=0.0):
+        self.now = start
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+def _v2_body(enabled, status, excluded_tests=None):
+    return {
+        "data": {
+            "metadata": {"testSelectionEnabled": enabled, "status": status},
+            "excludedTests": excluded_tests or [],
+        }
+    }
+
+
+def _ok_response(json_body):
+    return MagicMock(status_code=200, json=lambda: json_body)
+
+
+def _status_response(status_code):
+    return MagicMock(status_code=status_code, json=lambda: {})
+
+
+class TestGetExcludedTests:
+    def _listener(self, **overrides):
+        defaults = dict(bsid="bsid-1", stagename="Robot Tests")
+        defaults.update(overrides)
+        listener = _make_listener(**defaults)
+        listener.test_session_id = "sess-1"
+        return listener
+
+    # AC1
+    @patch.object(_sl_listener, "requests")
+    def test_url_is_v2_sl_api_no_query_params(self, mock_requests):
+        mock_requests.get.return_value = _ok_response(_v2_body(True, "noHistory"))
+        listener = self._listener()
+
+        listener.get_excluded_tests(poll=False)
+
+        args, kwargs = mock_requests.get.call_args
+        url = args[0] if args else kwargs.get("url")
+        assert url == f"{listener.base_url}/v2/test-sessions/sess-1/exclude-tests"
+        assert "/sl-api" in listener.base_url
+        assert "params" not in kwargs
+        assert kwargs["headers"] == listener.get_header()
+        assert kwargs["timeout"] == 30
+
+    # AC2
+    @patch.object(_sl_listener, "requests")
+    def test_ready_names_feed_mark_tests_to_be_skipped(self, mock_requests):
+        mock_requests.get.return_value = _ok_response(
+            _v2_body(True, "ready", [{"testName": "Match Test"}])
+        )
+        listener = self._listener()
+
+        names, terminal = listener.get_excluded_tests(poll=False)
+        assert names == ["Match Test"]
+        assert terminal is True
+
+        listener.excluded_tests = set(names)
+        match_test = SimpleNamespace(
+            name="Match Test", body=MagicMock(), has_teardown=lambda: False
+        )
+        other_test = SimpleNamespace(
+            name="Other Test", body=MagicMock(), has_teardown=lambda: False
+        )
+        suite = SimpleNamespace(tests=[match_test, other_test])
+
+        listener.mark_tests_to_be_skipped(suite)
+
+        match_test.body.create_keyword.assert_called_once_with(name="SKIP")
+        other_test.body.create_keyword.assert_not_called()
+
+    # AC3
+    @patch.object(_sl_listener, "requests")
+    def test_ready_with_empty_excluded_tests(self, mock_requests):
+        mock_requests.get.return_value = _ok_response(_v2_body(True, "ready", []))
+        listener = self._listener()
+
+        names, terminal = listener.get_excluded_tests(poll=False)
+
+        assert (names, terminal) == ([], True)
+
+    # AC6
+    @patch.object(_sl_listener, "requests")
+    def test_terminal_statuses_ignore_excluded_tests_fetch_once(self, mock_requests):
+        cases = [
+            (True, "noHistory"),
+            (True, "wontBeReady"),
+            (True, "error"),
+            (False, "ready"),
+        ]
+        for enabled, status in cases:
+            mock_requests.get.reset_mock()
+            mock_requests.get.return_value = _ok_response(
+                _v2_body(enabled, status, [{"testName": "Should Not Apply"}])
+            )
+            listener = self._listener()
+
+            names, terminal = listener.get_excluded_tests()
+
+            assert (names, terminal) == ([], True), (enabled, status)
+            assert mock_requests.get.call_count == 1, (enabled, status)
+
+    # AC12
+    @patch.object(_sl_listener, "requests")
+    def test_no_envelope_body_still_parses(self, mock_requests):
+        inner_payload = _v2_body(True, "ready", [{"testName": "Bare"}])["data"]
+        mock_requests.get.return_value = _ok_response(inner_payload)
+        listener = self._listener()
+
+        names, terminal = listener.get_excluded_tests(poll=False)
+
+        assert (names, terminal) == (["Bare"], True)
+
+    # AC7 — break immediately on any non-retryable failure
+    @patch.object(_sl_listener, "requests")
+    def test_break_immediately_on_non_retryable_failures(self, mock_requests):
+        mock_requests.RequestException = requests.RequestException
+
+        for status_code in (404, 401, 500):
+            mock_requests.get.reset_mock()
+            mock_requests.get.side_effect = None
+            mock_requests.get.return_value = _status_response(status_code)
+            listener = self._listener()
+
+            names, terminal = listener.get_excluded_tests()
+
+            assert (names, terminal) == ([], False), status_code
+            assert mock_requests.get.call_count == 1, status_code
+
+        mock_requests.get.reset_mock()
+        mock_requests.get.return_value = None
+        mock_requests.get.side_effect = requests.RequestException("boom")
+        listener = self._listener()
+
+        names, terminal = listener.get_excluded_tests()
+
+        assert (names, terminal) == ([], False)
+        assert mock_requests.get.call_count == 1
+        mock_requests.get.side_effect = None
+
+        for body in ([], "x", None):
+            mock_requests.get.reset_mock()
+            mock_requests.get.return_value = MagicMock(
+                status_code=200, json=lambda body=body: body
+            )
+            listener = self._listener()
+
+            names, terminal = listener.get_excluded_tests()
+
+            assert (names, terminal) == ([], False), body
+            assert mock_requests.get.call_count == 1, body
+
+        mock_requests.get.reset_mock()
+        mock_requests.get.return_value = MagicMock(
+            status_code=200, json=MagicMock(side_effect=ValueError("bad json"))
+        )
+        listener = self._listener()
+
+        names, terminal = listener.get_excluded_tests()
+
+        assert (names, terminal) == ([], False)
+        assert mock_requests.get.call_count == 1
+
+    # AC8
+    @patch.object(_sl_listener, "requests")
+    def test_missing_session_returns_no_call(self, mock_requests):
+        listener = _make_listener(bsid="bsid-1", stagename="Robot Tests")
+        listener.test_session_id = None
+
+        names, terminal = listener.get_excluded_tests()
+
+        assert (names, terminal) == ([], False)
+        mock_requests.get.assert_not_called()
+
+    # AC4 — persistent notReady stops at the deadline (fake clock, no real sleep)
+    @patch.object(_sl_listener, "requests")
+    def test_persistent_not_ready_stops_at_deadline(self, mock_requests, monkeypatch):
+        monkeypatch.setenv("SL_TIA_POLLING_TIMEOUT_SEC", "10")
+        monkeypatch.setenv("SL_TIA_POLLING_INTERVAL_SEC", "3")
+        mock_requests.get.return_value = _ok_response(_v2_body(True, "notReady"))
+        clock = _FakeClock()
+        listener = self._listener()
+
+        with patch.object(
+            _sl_listener.time, "monotonic", side_effect=clock.monotonic
+        ), patch.object(_sl_listener.time, "sleep", side_effect=clock.sleep):
+            names, terminal = listener.get_excluded_tests()
+
+        assert (names, terminal) == ([], False)
+        # ceil(timeout/interval) loop iterations + the initial fetch
+        assert mock_requests.get.call_count == 5
+
+    # AC4b — a fetch that lands past the deadline never yields a negative sleep
+    @patch.object(_sl_listener, "requests")
+    def test_over_budget_fetch_clamps_sleep_to_zero(self, mock_requests, monkeypatch):
+        monkeypatch.setenv("SL_TIA_POLLING_TIMEOUT_SEC", "10")
+        monkeypatch.setenv("SL_TIA_POLLING_INTERVAL_SEC", "5")
+        mock_requests.get.return_value = _ok_response(_v2_body(True, "notReady"))
+
+        # 1) deadline calc -> 0 (deadline=10); 2) while-check -> 9 (< 10, enter);
+        # 3) sleep_for calc -> 11 (already past deadline) -> clamps to 0 -> break.
+        monotonic_values = iter([0, 9, 11])
+        listener = self._listener()
+
+        with patch.object(
+            _sl_listener.time,
+            "monotonic",
+            side_effect=lambda: next(monotonic_values),
+        ), patch.object(_sl_listener.time, "sleep") as mock_sleep:
+            names, terminal = listener.get_excluded_tests()
+
+        assert (names, terminal) == ([], False)
+        mock_sleep.assert_not_called()
+        for call in mock_sleep.call_args_list:
+            assert call.args[0] >= 0
+
+    # AC5
+    @patch.object(_sl_listener, "requests")
+    def test_not_ready_then_ready_returns_exclusions(self, mock_requests, monkeypatch):
+        monkeypatch.setenv("SL_TIA_POLLING_TIMEOUT_SEC", "10")
+        monkeypatch.setenv("SL_TIA_POLLING_INTERVAL_SEC", "1")
+        mock_requests.get.side_effect = [
+            _ok_response(_v2_body(True, "notReady")),
+            _ok_response(_v2_body(True, "ready", [{"testName": "T1"}])),
+        ]
+        clock = _FakeClock()
+        listener = self._listener()
+
+        with patch.object(
+            _sl_listener.time, "monotonic", side_effect=clock.monotonic
+        ), patch.object(_sl_listener.time, "sleep", side_effect=clock.sleep):
+            names, terminal = listener.get_excluded_tests()
+
+        assert (names, terminal) == (["T1"], True)
+        assert mock_requests.get.call_count == 2
+
+    # AC9b — 0 disables polling via OR, tested independently for each var
+    @patch.object(_sl_listener, "requests")
+    def test_timeout_zero_disables_polling(self, mock_requests, monkeypatch):
+        monkeypatch.setenv("SL_TIA_POLLING_TIMEOUT_SEC", "0")
+        monkeypatch.setenv("SL_TIA_POLLING_INTERVAL_SEC", "5")
+        mock_requests.get.return_value = _ok_response(_v2_body(True, "notReady"))
+        listener = self._listener()
+
+        with patch.object(_sl_listener.time, "sleep") as mock_sleep:
+            listener.get_excluded_tests()
+
+        assert mock_requests.get.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch.object(_sl_listener, "requests")
+    def test_interval_zero_disables_polling(self, mock_requests, monkeypatch):
+        monkeypatch.setenv("SL_TIA_POLLING_TIMEOUT_SEC", "5")
+        monkeypatch.setenv("SL_TIA_POLLING_INTERVAL_SEC", "0")
+        mock_requests.get.return_value = _ok_response(_v2_body(True, "notReady"))
+        listener = self._listener()
+
+        with patch.object(_sl_listener.time, "sleep") as mock_sleep:
+            listener.get_excluded_tests()
+
+        assert mock_requests.get.call_count == 1
+        mock_sleep.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _read_positive_env() — env-var validation (AC9)
+# ---------------------------------------------------------------------------
+
+class TestReadPositiveEnv:
+    def test_defaults_when_unset(self, monkeypatch):
+        monkeypatch.delenv("SL_TEST_VAR", raising=False)
+        listener = _make_listener()
+
+        assert listener._read_positive_env("SL_TEST_VAR", 42) == 42
+
+    def test_invalid_values_fall_back_to_default(self, monkeypatch, capsys):
+        listener = _make_listener()
+        for raw in ("abc", "-1", "inf", "nan"):
+            monkeypatch.setenv("SL_TEST_VAR", raw)
+            assert listener._read_positive_env("SL_TEST_VAR", 7) == 7, raw
+        assert "[WARNING]" in capsys.readouterr().out
+
+    def test_accepts_valid_positive_float_string(self, monkeypatch):
+        listener = _make_listener()
+        monkeypatch.setenv("SL_TEST_VAR", "12.5")
+
+        assert listener._read_positive_env("SL_TEST_VAR", 1) == 12.5
+
+    def test_accepts_zero(self, monkeypatch):
+        listener = _make_listener()
+        monkeypatch.setenv("SL_TEST_VAR", "0")
+
+        assert listener._read_positive_env("SL_TEST_VAR", 1) == 0
+
+
+# ---------------------------------------------------------------------------
 # Playwright instrumentation — playwright_goto()
 # ---------------------------------------------------------------------------
 
@@ -288,6 +598,11 @@ def test_version_defined():
     assert re.match(r"^\d+\.\d+\.\d+$", _sl_listener.__version__)
 
 
+def test_version_bumped_for_v2_exclude_tests():
+    """AC14: __version__ was bumped alongside the v2 exclude-tests lookup."""
+    assert _sl_listener.__version__ == "1.4.0"
+
+
 # ---------------------------------------------------------------------------
 # _sl_log() — log level filtering
 # ---------------------------------------------------------------------------
@@ -330,7 +645,7 @@ class TestStartSuiteResolveBsidGuard:
 
         with patch.object(listener, "resolve_bsid_from_labid") as mock_resolve, \
              patch.object(listener, "create_test_session"), \
-             patch.object(listener, "get_excluded_tests", return_value=[]), \
+             patch.object(listener, "get_excluded_tests", return_value=([], False)), \
              patch.object(listener, "mark_tests_to_be_skipped"):
             listener.start_suite(suite, MagicMock())
 
@@ -347,7 +662,7 @@ class TestStartSuiteResolveBsidGuard:
 
         with patch.object(listener, "resolve_bsid_from_labid") as mock_resolve, \
              patch.object(listener, "create_test_session"), \
-             patch.object(listener, "get_excluded_tests", return_value=[]), \
+             patch.object(listener, "get_excluded_tests", return_value=([], False)), \
              patch.object(listener, "mark_tests_to_be_skipped"):
             listener.start_suite(suite, MagicMock())
 
@@ -366,12 +681,12 @@ class TestStartSuiteMultiSuiteTia:
         suite.source = "/path/to/suite.robot"
         return suite
 
-    def test_tia_filtering_runs_on_every_suite(self):
+    def test_mark_tests_to_be_skipped_runs_on_every_suite(self):
         """mark_tests_to_be_skipped must be called for every suite, not just the first."""
         listener = _make_listener(bsid="bsid-1")
 
         with patch.object(listener, "create_test_session") as mock_create, \
-             patch.object(listener, "get_excluded_tests", return_value=[]) as mock_get, \
+             patch.object(listener, "get_excluded_tests", return_value=([], True)) as mock_get, \
              patch.object(listener, "mark_tests_to_be_skipped") as mock_mark:
 
             # First suite — creates the session
@@ -382,8 +697,61 @@ class TestStartSuiteMultiSuiteTia:
             listener.start_suite(self._make_suite(), MagicMock())
 
         assert mock_create.call_count == 1
-        assert mock_get.call_count == 2
         assert mock_mark.call_count == 2
+
+    def test_terminal_ready_memoized_across_suites(self):
+        """AC10: a terminal outcome on suite 1 is memoized; later suites reuse
+        it without re-querying, but mark_tests_to_be_skipped still runs every
+        suite (asserted numerically, not "per suite")."""
+        listener = _make_listener(bsid="bsid-1")
+
+        with patch.object(listener, "create_test_session") as mock_create, \
+             patch.object(
+                 listener, "get_excluded_tests", return_value=(["T1"], True)
+             ) as mock_get, \
+             patch.object(listener, "mark_tests_to_be_skipped") as mock_mark:
+
+            listener.start_suite(self._make_suite(), MagicMock())
+            listener.test_session_id = "sess-1"
+            listener.start_suite(self._make_suite(), MagicMock())
+            listener.start_suite(self._make_suite(), MagicMock())
+
+        assert mock_create.call_count == 1
+        assert mock_get.call_count == 1
+        assert mock_mark.call_count == 3
+        assert listener.tia_resolved is True
+        assert listener.excluded_tests == {"T1"}
+
+    def test_non_terminal_suite_recovers_on_later_suite(self):
+        """AC11: a non-terminal outcome on suite 1 is not memoized; a later
+        suite that resolves ready applies exclusions; later retries are
+        single-shot (poll=False), not another full poll budget."""
+        listener = _make_listener(bsid="bsid-1")
+
+        with patch.object(listener, "create_test_session"), \
+             patch.object(
+                 listener,
+                 "get_excluded_tests",
+                 side_effect=[([], False), ([], False), (["T2"], True)],
+             ) as mock_get, \
+             patch.object(listener, "mark_tests_to_be_skipped") as mock_mark:
+
+            listener.start_suite(self._make_suite(), MagicMock())
+            assert listener.tia_resolved is False
+            listener.test_session_id = "sess-1"
+
+            listener.start_suite(self._make_suite(), MagicMock())
+            assert listener.tia_resolved is False
+
+            listener.start_suite(self._make_suite(), MagicMock())
+
+        assert mock_get.call_count == 3
+        assert mock_get.call_args_list[0].kwargs["poll"] is True
+        assert mock_get.call_args_list[1].kwargs["poll"] is False
+        assert mock_get.call_args_list[2].kwargs["poll"] is False
+        assert listener.tia_resolved is True
+        assert listener.excluded_tests == {"T2"}
+        assert mock_mark.call_count == 3
 
 
 # ---------------------------------------------------------------------------
