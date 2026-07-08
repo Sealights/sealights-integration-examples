@@ -8,6 +8,7 @@ The `SLListener.py` provides a Robot Framework listener that integrates your Rob
 - **Tracing**: Starts an OpenTelemetry span per test and sets baggage with test/session identifiers.
 - **Selenium instrumentation**: Monkey-patches `WebDriver.get/close/quit` to communicate with the SeaLights Browser Agent when present.
 - **Playwright instrumentation**: Monkey-patches `Page.goto/close` and `BrowserContext.close` to communicate with the SeaLights Browser Agent when present.
+- **Browser Library instrumentation**: Detects `robotframework-browser` at runtime and injects/flushes via `evaluate_javascript`, since it drives Playwright from a separate Node.js process (no in-process objects to monkey-patch).
 - **Results reporting**: Uploads aggregated test results (name, status, start/end) to SeaLights.
 
 ### Requirements
@@ -84,6 +85,7 @@ robot --listener "/path/to/repo/robot/SLListener.py:${SL_TOKEN}::CI Tests:${LAB_
 - If `selenium` is installed, the listener applies:
   - After `WebDriver.get`: injects a `CustomEvent("set:context")` with baggage containing `x-sl-test-name` and `x-sl-test-session-id`.
   - On `close`/`quit`: attempts `await window.$SealightsAgent.sendAllFootprints()`.
+  - Also dispatches `set:context` immediately to any already-open `WebDriver` at `start_test` (covers browsers opened in Suite Setup, before the patched `get` ever fires).
 - Ensure your application pages include the SeaLights Browser Agent so `window.$SealightsAgent` is available to collect web footprints.
 
 ### Playwright instrumentation
@@ -91,8 +93,21 @@ robot --listener "/path/to/repo/robot/SLListener.py:${SL_TOKEN}::CI Tests:${LAB_
   - After `Page.goto`: injects the same `CustomEvent("set:context")` with baggage containing `x-sl-test-name` and `x-sl-test-session-id`.
   - On `Page.close`: calls `window.$SealightsAgent.sendAllFootprints()` to flush browser footprints before closing.
   - On `BrowserContext.close`: flushes footprints from all open pages in the context before closing.
+  - Also dispatches `set:context` immediately to any already-open Playwright page at `start_test` (covers pages opened in Suite Setup, before the patched `goto` ever fires).
 - The same JavaScript events are dispatched as with Selenium — the SeaLights Browser Agent must be present on the application pages.
-- This works with direct Playwright Python API usage (e.g. custom Robot keyword libraries that use `playwright.sync_api`). The `robotframework-browser` (Browser Library) uses a Node.js gRPC bridge and may require a different integration approach.
+- This works with direct Playwright Python API usage (e.g. custom Robot keyword libraries that use `playwright.sync_api`).
+
+### Browser Library instrumentation (`robotframework-browser`)
+`robotframework-browser` runs Playwright in a separate Node.js process behind a gRPC bridge, so the listener's in-process Selenium/Playwright monkey-patches never fire for it. Instead the listener:
+- **Detects** the library at runtime via `BuiltIn().get_library_instance("Browser")` — no `robotframework-browser` import or dependency is required; suites that don't use it are unaffected.
+- **Injects on `start_test`**: snapshots the open-page catalog (`get_browser_catalog()`) and dispatches `set:context` on every page already open (covers browsers opened in Suite Setup).
+- **Re-injects on navigation**: after each keyword owned by the `Browser` library, diffs the catalog's `(page id, URL)` snapshot and re-injects `set:context` on new pages and on URL changes — required because injection uses `persist: false` (no `sessionStorage` auto-restore on a fresh document). Non-Browser keywords are skipped without reading the catalog; if the owning library can't be determined at all, the keyword is inspected anyway rather than skipped.
+- **Flushes before close**: when a keyword name matches a close/teardown pattern (`Close Page`, `Close Context`, `Close Browser`, `Close All Browsers`), flushes `sendAllFootprints()` on every open catalog page before the close executes — `end_keyword` fires too late to reach an already-closed page, and the specific target page isn't resolved from the keyword name, so all open pages are flushed instead (safe since flush is idempotent and close keywords are infrequent).
+- **Flushes at `end_test`**: a name-independent catch-all that flushes every page still open, regardless of how it was closed.
+- **Multi-page handling**: enumerates all pages in the catalog, uses `switch_page` to target non-active pages, and always restores the originally-active page afterward (even if a page's `switch_page`/`evaluate_javascript` call fails) — switching is invisible to the running test.
+- Uses an arrow-wrapped script (`() => { ... }`) since `evaluate_javascript` rejects bare statement strings, unlike Selenium's `execute_script`/Playwright's `page.evaluate`.
+- **Known limitation:** app-driven navigation (e.g. a meta-refresh or scripted redirect) that occurs with no intervening Browser keyword may not get `set:context` re-injected until the next Browser keyword fires; footprints in that narrow window may be untagged. Keyword-driven navigation (`Go To`, `New Page`, a `Click` that navigates) is unaffected.
+- **Prerequisite:** the same as Selenium/Playwright — your application pages must load the SeaLights Browser Agent (`window.$SealightsAgent`).
 
 ### Logging and environment
 - Console log lines are prefixed with `[SeaLights]` for easy filtering.
@@ -114,8 +129,11 @@ robot --listener "/path/to/repo/robot/SLListener.py:${SL_TOKEN}::CI Tests:${LAB_
 - "No active build session for labId" → Ensure the Lab has an active build session for the given stage.
 - Selenium JS errors → Ensure your app pages load the SeaLights Browser Agent (`window.$SealightsAgent`).
 - Playwright JS errors → Same as Selenium: ensure your app pages load the SeaLights Browser Agent (`window.$SealightsAgent`).
+- Browser Library not detected → Ensure the suite imports `Browser` before the listener's `start_test` runs; detection failures are logged at DEBUG and the listener falls back to no-op for that path.
+- Browser Library JS errors / missing footprints → Same as Selenium/Playwright: ensure your app pages load `window.$SealightsAgent`; run with `SL_LOG_LEVEL=DEBUG` to trace per-page inject/flush.
 
 ### File location
 - Listener source: `robot/SLListener.py`
 - This guide: `robot/SLListener.md`
+
 

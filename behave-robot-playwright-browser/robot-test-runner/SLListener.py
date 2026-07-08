@@ -1,4 +1,5 @@
 import functools
+import json
 import math
 import os
 import socket
@@ -15,6 +16,7 @@ import datetime
 import requests
 import jwt
 from opentelemetry import trace, context, baggage
+from robot.libraries.BuiltIn import BuiltIn
 
 try:
     from selenium.webdriver.remote.webdriver import WebDriver
@@ -29,13 +31,30 @@ except ImportError:
     PlaywrightBrowserContext = None
 
 # Bump this string on every change to the listener.
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 SL_TEST_LISTENER_TRACER = "sl-test-listener"
 tracer = trace.get_tracer(SL_TEST_LISTENER_TRACER)
 
 SEALIGHTS_LOG_TAG = "[SeaLights]"
 TEST_STATUS_MAP = {"FAIL": "failed", "SKIP": "skipped"}
+
+# Shared set:context baggage keys (used by both the Selenium/Playwright and
+# Browser Library script builders so the two paths cannot silently drift).
+BAGGAGE_KEY_TEST_NAME = "x-sl-test-name"
+BAGGAGE_KEY_TEST_SESSION_ID = "x-sl-test-session-id"
+
+# Browser Library flush script — evaluate_javascript requires an arrow-wrapped function.
+BROWSER_LIBRARY_FLUSH_SCRIPT = "() => { window.$SealightsAgent.sendAllFootprints(); }"
+
+# start_keyword close/teardown detection (matched as a case-insensitive substring
+# so a library prefix like "Browser.Close Page" still matches).
+BROWSER_LIBRARY_CLOSE_KEYWORD_PATTERNS = (
+    "close page",
+    "close context",
+    "close browser",
+    "close all browsers",
+)
 
 # ── Log level control ─────────────────────────────────────────────────────────
 # Control verbosity without changing the robot command line.
@@ -100,6 +119,17 @@ class SLListener:
         self.enabled = True
         self.disabled_reason = ""
 
+        # Browser Library (robotframework-browser) state — seeded here (never
+        # first-assigned in start_test) so start_keyword/end_keyword are safe
+        # no-ops even when fired during Suite Setup, before the first start_test.
+        self.browser_lib = None
+        self.bl_page_snapshot = {}
+        self.bl_test_baggage = None
+        # Library imports are suite-scoped in Robot Framework, so detection is
+        # cached per suite (reset in start_suite) rather than re-attempted —
+        # and re-raising/swallowing an exception — on every single test.
+        self._bl_checked = False
+
         # Validate that at least one of bsid or labId is provided
         if not self.bsid and not self.labid:
             self.enabled = False
@@ -135,6 +165,7 @@ class SLListener:
             _sl_log(f"DISABLED: {self.disabled_reason}", level="WARNING")
 
     def start_suite(self, suite, result):
+        self._bl_checked = False
         if not suite.tests:
             _sl_log(
                 f"start_suite: '{suite.longname}' — no direct tests, skipping",
@@ -185,11 +216,36 @@ class SLListener:
         )
         self.try_instrument_selenium(test_name, self.test_session_id)
         self.try_instrument_playwright(test_name, self.test_session_id)
+        self.try_instrument_browser_library(test_name, self.test_session_id)
         self.start_span(test_name)
+
+    def start_keyword(self, data, result):
+        """Flush before close — end_keyword fires too late for an
+        already-closed page. See SLListener.md § Browser Library instrumentation.
+        """
+        if self.browser_lib is None:
+            return
+        keyword_name = (getattr(data, "name", "") or "").lower()
+        if not any(
+            pattern in keyword_name
+            for pattern in BROWSER_LIBRARY_CLOSE_KEYWORD_PATTERNS
+        ):
+            return
+        _sl_log(
+            f"Browser Library: close-pattern flush before '{data.name}'", level="DEBUG"
+        )
+        catalog = self._get_browser_catalog()
+        page_ids = list(_flatten_browser_catalog(catalog).keys())
+        self._run_on_browser_library_pages(
+            page_ids,
+            BROWSER_LIBRARY_FLUSH_SCRIPT,
+            _find_active_browser_page_id(catalog),
+        )
 
     def end_test(self, data, result):
         test_name = self.get_encoded_test_name(data.name)
         _sl_log(f"← end_test:   '{data.name}' | {result.status}", level="DEBUG")
+        self._flush_browser_library()
         test_span = self.spans.get(test_name)
         if test_span:
             context.detach(test_span["token"])
@@ -197,6 +253,53 @@ class SLListener:
             self.spans.pop(test_name)
         else:
             _sl_log(f"Test span not found for '{data.name}'", level="WARNING")
+
+    def _flush_browser_library(self):
+        """end_test catch-all: flush every page still open, then clear per-test state."""
+        if self.browser_lib is None:
+            return
+        catalog = self._get_browser_catalog()
+        page_ids = list(_flatten_browser_catalog(catalog).keys())
+        _sl_log(f"Browser Library: end_test flush count={len(page_ids)}", level="DEBUG")
+        self._run_on_browser_library_pages(
+            page_ids,
+            BROWSER_LIBRARY_FLUSH_SCRIPT,
+            _find_active_browser_page_id(catalog),
+        )
+        self.bl_page_snapshot = {}
+        self.bl_test_baggage = None
+
+    def end_keyword(self, data, result):
+        """Re-injects context on new/navigated Browser pages; gated on the
+        owning library (RF 7.4.2: lives on `result`, not `data`). See
+        SLListener.md § Browser Library instrumentation.
+        """
+        if self.browser_lib is None:
+            return
+        if self.bl_test_baggage is None:
+            # No live test (e.g. a Browser keyword in Suite Teardown, after
+            # end_test already cleared state) — nothing to attribute footprints to.
+            return
+        owner = getattr(result, "owner", None) or getattr(result, "libname", None)
+        if owner is not None and owner != "Browser":
+            return
+
+        catalog = self._get_browser_catalog()
+        current_snapshot = _flatten_browser_catalog(catalog)
+        changed_page_ids = _diff_browser_catalog_pages(
+            self.bl_page_snapshot, current_snapshot
+        )
+        if changed_page_ids:
+            test_name, test_session_id = self.bl_test_baggage or (None, None)
+            script = _build_browser_library_context_script(test_name, test_session_id)
+            _sl_log(
+                f"Browser Library: navigation re-inject for {changed_page_ids}",
+                level="DEBUG",
+            )
+            self._run_on_browser_library_pages(
+                changed_page_ids, script, _find_active_browser_page_id(catalog)
+            )
+        self.bl_page_snapshot = current_snapshot
 
     # --- Sealights API helpers ---
 
@@ -334,13 +437,9 @@ class SLListener:
         return value
 
     def resolve_bsid_from_labid(self):
-        """
-        Call /api/v1/lab-ids/{labId}/build-sessions/active to resolve active bsid.
-        Required query params: agentId, testStage.
-        Handling:
-          - 200: set self.bsid from response.buildSessionId
-          - 404: disable listener (no active bsid)
-          - 500: exit with error
+        """Resolves bsid via GET /v1/lab-ids/{labId}/build-sessions/active.
+        See SLListener.md § How endpoints are determined / Failure and
+        disable behavior.
         """
         api_endpoint = self.extract_sl_endpoint(replace_api_with_sl_api=False)
         url = f"{api_endpoint}/v1/lab-ids/{self.labid}/build-sessions/active"
@@ -473,6 +572,21 @@ class SLListener:
             WebDriver.quit = selenium_close_quit(WebDriver.quit)
         _dispatch_context_to_active_drivers(test_name, test_session_id)
 
+    def try_detect_browser_library(self):
+        """Never raises to Robot — get_library_instance() raises when the
+        library isn't imported, the common case for Selenium/Playwright-only
+        suites. Cached per suite; see the _bl_checked reset in start_suite.
+        """
+        if self._bl_checked:
+            return self.browser_lib
+        self._bl_checked = True
+        try:
+            instance = BuiltIn().get_library_instance("Browser")
+        except Exception:
+            instance = None
+        self.browser_lib = instance or None
+        return self.browser_lib
+
     def try_instrument_playwright(self, test_name, test_session_id):
         if PlaywrightPage:
             PlaywrightPage.goto = playwright_goto(test_name, test_session_id)(
@@ -484,6 +598,65 @@ class SLListener:
                 PlaywrightBrowserContext.close
             )
         _dispatch_context_to_active_pages(test_name, test_session_id)
+
+    def try_instrument_browser_library(self, test_name, test_session_id):
+        """Injects set:context on pre-existing pages (Suite Setup case).
+        See SLListener.md § Browser Library instrumentation.
+        """
+        self.try_detect_browser_library()
+        if self.browser_lib is None:
+            return
+        self.bl_test_baggage = (test_name, test_session_id)
+        catalog = self._get_browser_catalog()
+        self.bl_page_snapshot = _flatten_browser_catalog(catalog)
+        script = _build_browser_library_context_script(test_name, test_session_id)
+        self._run_on_browser_library_pages(
+            list(self.bl_page_snapshot.keys()),
+            script,
+            _find_active_browser_page_id(catalog),
+        )
+
+    def _get_browser_catalog(self):
+        """Read the Browser Library catalog, swallowing errors (never disables the listener)."""
+        try:
+            return self.browser_lib.get_browser_catalog()
+        except Exception as e:
+            _sl_log(f"Browser Library: get_browser_catalog failed: {e}", level="DEBUG")
+            return []
+
+    def _run_on_browser_library_pages(self, page_ids, script, active_page_id):
+        """Runs `script` on each page, restoring the originally-active page
+        (only if we actually switched away from it) even if a per-page call
+        fails mid-loop. See SLListener.md § Browser Library instrumentation
+        ("Multi-page handling").
+        """
+        if not page_ids:
+            return
+        switched = False
+        try:
+            for page_id in page_ids:
+                try:
+                    if page_id != active_page_id:
+                        self.browser_lib.switch_page(page_id)
+                        switched = True
+                    self.browser_lib.evaluate_javascript(None, script)
+                    _sl_log(
+                        f"Browser Library: ran script on page {page_id}", level="DEBUG"
+                    )
+                except Exception as e:
+                    _sl_log(
+                        f"Browser Library: script failed for page {page_id}: {e}",
+                        level="DEBUG",
+                    )
+        finally:
+            if active_page_id is not None and switched:
+                try:
+                    self.browser_lib.switch_page(active_page_id)
+                except Exception as e:
+                    _sl_log(
+                        f"Browser Library: failed to restore active page {active_page_id}: {e}",
+                        level="WARNING",
+                    )
 
     # --- Generic helpers ---
 
@@ -516,20 +689,93 @@ class SLListener:
         return quote(test_name, safe="")
 
 
+def _json_str(value):
+    """json.dumps a value as a string, stringifying non-str input first so the
+    output matches the legacy %s-formatting behavior (e.g. None -> "None")
+    while still escaping JS-unsafe characters like embedded quotes.
+    """
+    return json.dumps(str(value))
+
+
 def _build_set_context_script(test_name, test_session_id):
     return (
         'window.dispatchEvent(new CustomEvent("set:context", '
-        '{detail: {baggage: {"x-sl-test-name": "%s", "x-sl-test-session-id": "%s"}}}));'
-        % (test_name, test_session_id)
+        "{detail: {baggage: {%s: %s, %s: %s}}}));"
+        % (
+            json.dumps(BAGGAGE_KEY_TEST_NAME),
+            _json_str(test_name),
+            json.dumps(BAGGAGE_KEY_TEST_SESSION_ID),
+            _json_str(test_session_id),
+        )
     )
 
 
-def _dispatch_context_to_active_drivers(test_name, test_session_id):
-    """Dispatch set:context on any already-open browser.
+def _build_browser_library_context_script(test_name, test_session_id):
+    """Arrow-wrapped: evaluate_javascript rejects bare statement strings.
+    See SLListener.md § Browser Library instrumentation.
+    """
+    return (
+        '() => { window.dispatchEvent(new CustomEvent("set:context", '
+        "{detail: {persist: false, baggage: {%s: %s, %s: %s}}})); }"
+        % (
+            json.dumps(BAGGAGE_KEY_TEST_NAME),
+            _json_str(test_name),
+            json.dumps(BAGGAGE_KEY_TEST_SESSION_ID),
+            _json_str(test_session_id),
+        )
+    )
 
-    This handles the common case where the browser was opened in Suite Setup
-    (before start_test patches WebDriver.get), so the patched get() never fires.
-    Uses the _active_webdrivers set populated by the module-level tracking wrapper.
+
+def _flatten_browser_catalog(catalog):
+    """Flatten a Browser Library get_browser_catalog() structure into {page_id: url}.
+
+    Expected shape: [{"contexts": [{"pages": [{"id": ..., "url": ...}, ...]}, ...]}, ...]
+    """
+    pages = {}
+    for browser in catalog or []:
+        for ctx in browser.get("contexts") or []:
+            for page in ctx.get("pages") or []:
+                page_id = page.get("id")
+                if page_id is not None:
+                    pages[page_id] = page.get("url")
+    return pages
+
+
+def _find_active_browser_page_id(catalog):
+    """Return the globally active page id from a Browser Library catalog, or None.
+
+    Every browser/context in the catalog carries its own last-active
+    "activePage" (per get_browser_catalog()), even ones that aren't
+    currently focused — so the true active page is only the one under the
+    browser flagged "activeBrowser" and that browser's "activeContext",
+    mirroring Browser Library's own _get_active_triplet() lookup.
+    """
+    for browser in catalog or []:
+        if not browser.get("activeBrowser"):
+            continue
+        active_context_id = browser.get("activeContext")
+        for ctx in browser.get("contexts") or []:
+            if ctx.get("id") == active_context_id:
+                return ctx.get("activePage")
+    return None
+
+
+def _diff_browser_catalog_pages(previous_snapshot, current_snapshot):
+    """Return page ids in current_snapshot that are new or whose URL changed.
+
+    Handles nullable URLs: None->url and url->None are changes; None->None is not.
+    Pages removed from current_snapshot (already closed) are not reported.
+    """
+    return [
+        page_id
+        for page_id, url in current_snapshot.items()
+        if page_id not in previous_snapshot or previous_snapshot[page_id] != url
+    ]
+
+
+def _dispatch_context_to_active_drivers(test_name, test_session_id):
+    """Covers browsers opened in Suite Setup, before start_test patches
+    WebDriver.get. See SLListener.md § Selenium instrumentation.
     """
     if not _active_webdrivers:
         return
@@ -542,10 +788,7 @@ def _dispatch_context_to_active_drivers(test_name, test_session_id):
 
 
 def _dispatch_context_to_active_pages(test_name, test_session_id):
-    """Dispatch set:context on any already-open Playwright page.
-
-    Mirrors _dispatch_context_to_active_drivers for Playwright.
-    """
+    """Playwright counterpart to _dispatch_context_to_active_drivers."""
     if not _active_playwright_pages:
         return
     script = _build_set_context_script(test_name, test_session_id)
