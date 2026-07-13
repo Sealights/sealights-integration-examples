@@ -1,3 +1,33 @@
+"""SeaLights Robot Framework listener.
+
+A standalone Robot Framework Listener v3 that integrates Robot test runs with
+SeaLights: opens a Test Session, optionally narrows execution to recommended
+tests, instruments Selenium/Playwright/Browser Library for web footprints, and
+reports results back to SeaLights. It talks to the backend directly over HTTP
+and does NOT depend on the ``sealights-python-agent`` package.
+
+Ship this file (and ``SLListener.md``) on its own; it is the deliverable.
+
+Runtime dependencies (install into the same environment as your Robot tests):
+    requests          - backend HTTP calls
+    pyjwt             - decodes the SeaLights token to resolve the server URL
+    opentelemetry-api - per-test span/baggage context used for footprint tagging
+
+Assumed already present:
+    robotframework    - this runs as a ``robot --listener`` (Listener API v3)
+
+Optional, only if your suite drives a browser (both are imported lazily and
+their absence is handled gracefully):
+    selenium          - for Selenium-based suites
+    playwright        - for Playwright-based suites
+
+Note: ``opentelemetry-api`` alone gives a no-op tracer, which is all this
+listener needs. Installing ``opentelemetry-sdk`` + an exporter is only required
+if you separately run under ``opentelemetry-instrument`` to export real spans.
+
+See ``SLListener.md`` for arguments, quick start, and troubleshooting.
+"""
+
 import functools
 import json
 import math
@@ -31,7 +61,7 @@ except ImportError:
     PlaywrightBrowserContext = None
 
 # Bump this string on every change to the listener.
-__version__ = "1.5.0"
+__version__ = "1.5.1"
 
 SL_TEST_LISTENER_TRACER = "sl-test-listener"
 tracer = trace.get_tracer(SL_TEST_LISTENER_TRACER)
