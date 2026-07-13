@@ -12,8 +12,42 @@ The `SLListener.py` provides a Robot Framework listener that integrates your Rob
 - **Results reporting**: Uploads aggregated test results (name, status, start/end) to SeaLights.
 
 ### Requirements
+
+#### Python dependencies
+
+`SLListener.py` is shipped as a single file. It needs only three packages installed in the **same environment as your Robot tests**:
+
+| Package | Purpose |
+|---|---|
+| `requests` | Backend HTTP calls |
+| `pyjwt` | Decodes the SeaLights token to resolve the server URL (`x-sl-server`) |
+| `opentelemetry-api` | Per-test span/baggage context used for footprint tagging |
+
+`robotframework` is assumed to be present already — the listener runs via `robot --listener`.
+
+Install them directly:
+
+```bash
+pip install requests pyjwt opentelemetry-api
+```
+
+…or add them to your project's `requirements.txt`:
+
+```
+requests
+pyjwt
+opentelemetry-api
+```
+
+Leave these **unpinned** so they resolve against the versions your project already uses — the listener does not require specific versions, and pinning them is the usual cause of dependency conflicts.
+
+**Optional — browser suites only:** install `selenium` and/or `playwright` if your tests drive a browser. Both are imported lazily and their absence is handled gracefully, so suites that don't use them need neither.
+
+**Optional — real trace export:** `opentelemetry-api` alone runs the listener with a no-op tracer, which is all it needs. Only add `opentelemetry-sdk` plus an exporter (e.g. `opentelemetry-exporter-otlp-proto-http`) if you separately run under `opentelemetry-instrument` to export spans to a backend.
+
+#### Runtime configuration
+
 - Robot Framework (Listener API v3 compatible).
-- Python 3.x environment with your regular test dependencies.
 - A SeaLights token (`sltoken`) whose JWT payload contains the `x-sl-server` claim.
 - One of the following to identify the build session:
   - **Build Session ID** (`bsid`), or
@@ -35,7 +69,7 @@ Notes:
 - When `testprojectid` is provided, it is sent as the `x-sl-testprojectid` HTTP header on all API calls, included in the session creation body, and added as a query parameter when resolving `bsid` from `labid`.
 
 ### Quick start
-Use an absolute path to avoid module import collisions. Replace `/path/to/repo` with your local clone path.
+Reference the listener by an absolute path to avoid module import collisions. Replace `/path/to/SLListener.py` with wherever you saved the file, and `/path/to/robot/tests.robot` with your suite.
 
 With `Build Session Id` example:
 
@@ -43,7 +77,7 @@ With `Build Session Id` example:
 export machine_dns="<application-under-test-url>"
 export SL_TOKEN="<your-sealights-token>"
 export BSID="<your-build-session-id>"
-robot --listener "/path/to/repo/robot/SLListener.py:${SL_TOKEN}:${BSID}:CI Tests" /path/to/robot/tests.robot
+robot --listener "/path/to/SLListener.py:${SL_TOKEN}:${BSID}:CI Tests" /path/to/robot/tests.robot
 ```
 
 With `labid` example:
@@ -52,7 +86,7 @@ With `labid` example:
 export machine_dns="<application-under-test-url>"
 export SL_TOKEN="<your-sealights-token>"
 export LAB_ID="<your-lab-id>"
-robot --listener "/path/to/repo/robot/SLListener.py:${SL_TOKEN}::CI Tests:${LAB_ID}" /path/to/robot/tests.robot
+robot --listener "/path/to/SLListener.py:${SL_TOKEN}::CI Tests:${LAB_ID}" /path/to/robot/tests.robot
 ```
 
 With `labid` and `testprojectid` (non-integration build lab):
@@ -62,7 +96,7 @@ export machine_dns="<application-under-test-url>"
 export SL_TOKEN="<your-sealights-token>"
 export LAB_ID="<your-lab-id>"
 export TEST_PROJECT_ID="<your-test-project-id>"
-robot --listener "/path/to/repo/robot/SLListener.py:${SL_TOKEN}::CI Tests:${LAB_ID}:${TEST_PROJECT_ID}" /path/to/robot/tests.robot
+robot --listener "/path/to/SLListener.py:${SL_TOKEN}::CI Tests:${LAB_ID}:${TEST_PROJECT_ID}" /path/to/robot/tests.robot
 ```
 
 ### How endpoints are determined

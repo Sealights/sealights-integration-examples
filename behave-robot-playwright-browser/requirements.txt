@@ -1,6 +1,2 @@
 behave>=1.2.6
 playwright>=1.40.0
-# SeaLights Python agent. Use one of:
-#   1) pip install sealights-python-agent           (released)
-#   2) pip install -e /path/to/SL.OnPremise.Agents.Python   (local dev / SLDEV-25948 branch)
-sealights-python-agent
