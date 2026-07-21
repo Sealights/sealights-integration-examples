@@ -1,28 +1,6 @@
 #!/usr/bin/env bash
 #
-# mirror-sl-layer.sh
-#
-# Mirror a published SeaLights Lambda layer from the SeaLights AWS account into
-# your own AWS account. Reads the source layer version (cross-account, no auth on
-# the download URL), verifies its integrity, and republishes it under your account
-# with the original source ARN recorded in the layer description.
-#
-# Usage:
-#   ./mirror-sl-layer.sh --tech <tech> --version <n> --region <region> [options]
-#
-# Required:
-#   -t, --tech <tech>        One of: nodejs-cjs | nodejs-esm | python | java
-#   -v, --version <n>        Source layer version number to mirror
-#   -r, --region <region>    AWS region (e.g. us-east-1, eu-west-1)
-#
-# Optional:
-#   -a, --source-account <id>  Source (SeaLights) account id (default: 442677231940)
-#   -n, --target-name <name>   Layer name to publish into your account
-#                              (default: same as the source layer name)
-#   -k, --keep                 Keep the downloaded layer.zip instead of deleting it
-#   -h, --help                 Show this help and exit
-#
-# Requirements: awscli (configured with YOUR credentials), jq, curl, openssl
+# Mirror a published SeaLights Lambda layer into your own AWS account.
 #
 set -euo pipefail
 
@@ -32,6 +10,7 @@ SL_LAYER_NODEJS_ESM="sl-nodejs-layer-esm"
 SL_LAYER_PYTHON="sl-python-layer"
 SL_LAYER_JAVA="sl-java-layer"
 
+# SeaLights-owned account that publishes the layers.
 SOURCE_ACCOUNT="442677231940"
 
 TECH=""
@@ -41,7 +20,25 @@ TARGET_NAME=""
 KEEP_ZIP="false"
 
 usage() {
-  sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+  cat <<'EOF'
+Mirror a published SeaLights Lambda layer into your own AWS account.
+
+Usage:
+  ./mirror-sl-layer.sh --tech <tech> --version <n> --region <region> [options]
+
+Required:
+  -t, --tech <tech>        One of: nodejs-cjs | nodejs-esm | python | java
+  -v, --version <n>        Source layer version number to mirror
+  -r, --region <region>    AWS region (e.g. us-east-1, eu-west-1)
+
+Optional:
+  -n, --target-name <name>   Layer name to publish into your account
+                             (default: same as the source layer name)
+  -k, --keep                 Keep the downloaded layer.zip instead of deleting it
+  -h, --help                 Show this help and exit
+
+Requirements: awscli (configured with YOUR credentials), jq, curl, openssl
+EOF
 }
 
 die() {
@@ -55,7 +52,6 @@ while [[ $# -gt 0 ]]; do
     -t|--tech)           TECH="${2:-}"; shift 2 ;;
     -v|--version)        VERSION="${2:-}"; shift 2 ;;
     -r|--region)         REGION="${2:-}"; shift 2 ;;
-    -a|--source-account) SOURCE_ACCOUNT="${2:-}"; shift 2 ;;
     -n|--target-name)    TARGET_NAME="${2:-}"; shift 2 ;;
     -k|--keep)           KEEP_ZIP="true"; shift ;;
     -h|--help)           usage; exit 0 ;;
@@ -89,14 +85,6 @@ echo "==> Mirroring SeaLights layer"
 echo "    source ARN : ${SOURCE_ARN}"
 echo "    region     : ${REGION}"
 echo "    target name: ${TARGET_NAME}"
-echo
-
-# 0. Show which account we're about to publish INTO (should be YOUR account).
-CALLER_ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo 'unknown')"
-echo "==> Publishing into account: ${CALLER_ACCOUNT}"
-if [[ "$CALLER_ACCOUNT" == "$SOURCE_ACCOUNT" ]]; then
-  die "your credentials resolve to the SeaLights source account (${SOURCE_ACCOUNT}); use your own account's credentials"
-fi
 echo
 
 # 1. Cross-account read of the source layer metadata (uses YOUR creds; allowed by

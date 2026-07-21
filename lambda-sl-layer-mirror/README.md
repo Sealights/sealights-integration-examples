@@ -25,7 +25,7 @@ This script solves that: it reads the SeaLights layer (a cross-account read that
 ## Usage
 
 ```bash
-./mirror-sl-layer.sh --tech <tech> --version <n> --region <region> [options]
+./mirror-sl-layer.sh --tech <nodejs-cjs|nodejs-esm|python|java> --version <n> --region <region> [options]
 ```
 
 | Flag | Required | Description |
@@ -34,8 +34,8 @@ This script solves that: it reads the SeaLights layer (a cross-account read that
 | `-v, --version` | yes | The **SeaLights** layer version you want to mirror |
 | `-r, --region` | yes | AWS region (e.g. `us-east-1`, `eu-west-1`) |
 | `-n, --target-name` | no | Layer name to publish under in your account (defaults to the SeaLights layer name) |
-| `-a, --source-account` | no | Source (SeaLights) account id (defaults to the SeaLights-owned account) |
 | `-k, --keep` | no | Keep the downloaded layer zip instead of deleting it |
+| `-h, --help` | no | Show usage help and exit |
 
 Example — mirror version `6` of the Node.js (CJS) layer in `us-east-1`:
 
