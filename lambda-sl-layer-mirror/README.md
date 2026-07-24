@@ -1,5 +1,7 @@
 # Mirror a SeaLights Lambda Layer Into Your Own AWS Account
 
+> **This is an example, not an official SeaLights product or supported tool.** `mirror-sl-layer.sh` is a reference script that demonstrates one way to use the AWS CLI to download a SeaLights-published Lambda layer and re-upload it into a customer's own AWS account (see "Why you might need this" below). It is meant to be **forked and used as a starting point** to inform your own decisions about how to manage this mirroring step — adapt it to your account structure, security policies, tooling, and automation as you see fit. If you'd like help tailoring this to your environment, or have questions about the approach, reach out to your SeaLights Solutions Architect.
+
 `mirror-sl-layer.sh` copies a SeaLights-published Lambda layer into **your** AWS account and republishes it under your own layer ARN.
 
 ## Why you might need this
