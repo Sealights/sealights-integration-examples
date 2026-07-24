@@ -2,6 +2,11 @@
 #
 # Mirror a published SeaLights Lambda layer into your own AWS account.
 #
+# Based on the SeaLights example mirror-sl-layer.sh (upstream baseline 1.0.df4c).
+# This is a starting point you are expected to modify. The tag above marks the
+# upstream version you forked from — it does NOT track your local edits, so do
+# not treat it as the version of the script you are actually running.
+#
 set -euo pipefail
 
 # --- source layer names (the 4 published techs) ---------------------------------
@@ -46,13 +51,30 @@ die() {
   exit 1
 }
 
+# All recognized flags — used to detect a missing value (e.g. `--tech --version`).
+KNOWN_FLAGS=(-t --tech -v --version -r --region -n --target-name -k --keep -h --help)
+
+is_flag() {
+  local val="$1"
+  for f in "${KNOWN_FLAGS[@]}"; do
+    [[ "$val" == "$f" ]] && return 0
+  done
+  return 1
+}
+
+# Ensure the option ($1) was given a value ($2) that is non-empty and isn't
+# itself another flag (e.g. `--tech --version` or a trailing `--tech`).
+require_value() {
+  [[ -n "$2" ]] && ! is_flag "$2" || die "$1 requires a value (use --help)"
+}
+
 # --- parse args -----------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -t|--tech)           TECH="${2:-}"; shift 2 ;;
-    -v|--version)        VERSION="${2:-}"; shift 2 ;;
-    -r|--region)         REGION="${2:-}"; shift 2 ;;
-    -n|--target-name)    TARGET_NAME="${2:-}"; shift 2 ;;
+    -t|--tech)           require_value "$1" "${2:-}"; TECH="$2"; shift 2 ;;
+    -v|--version)        require_value "$1" "${2:-}"; VERSION="$2"; shift 2 ;;
+    -r|--region)         require_value "$1" "${2:-}"; REGION="$2"; shift 2 ;;
+    -n|--target-name)    require_value "$1" "${2:-}"; TARGET_NAME="$2"; shift 2 ;;
     -k|--keep)           KEEP_ZIP="true"; shift ;;
     -h|--help)           usage; exit 0 ;;
     *) die "unknown argument: $1 (use --help)" ;;
@@ -139,4 +161,6 @@ NEW_ARN="$(echo "$RESULT" | jq -r '.LayerVersionArn')"
 echo
 echo "==> Done"
 echo "    published: ${NEW_ARN}"
-[[ "$KEEP_ZIP" == "true" ]] && echo "    kept zip : ${TMP_ZIP}"
+if [[ "$KEEP_ZIP" == "true" ]]; then
+  echo "    kept zip : ${TMP_ZIP}"
+fi
