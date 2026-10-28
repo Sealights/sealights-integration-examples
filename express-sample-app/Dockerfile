@@ -1,4 +1,4 @@
-FROM node:16.13.2-alpine AS runtime
+FROM node:22.23.4-alpine3.24 AS runtime
 
 WORKDIR /app
 COPY . /app
